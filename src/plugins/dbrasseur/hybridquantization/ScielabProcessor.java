@@ -5,8 +5,15 @@ import icy.image.colorspace.IcyColorSpace;
 import icy.type.collection.array.Array1DUtil;
 import icy.util.ColorUtil;
 
+import java.util.Arrays;
+
+/**
+ * Class for S-cielab processing
+ * S-CIELAB values and code are derived from the S-CIELAB example code http://scarlet.stanford.edu/~brian/scielab/scielab.html
+ * XYZ-Opp conversion matrices are from A HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL
+ */
 public class ScielabProcessor {
-	private static final int minSAMPPERDEG = 224;
+	private static final int minSAMPPERDEG = 224;   //As specified in the S-CIELAB example code :
 	public static final double[][] mSRGBtoXYZ = {
 			{0.4124564, 0.3575761, 0.1804375},
 			{0.2126729, 0.7151522, 0.0721750},
@@ -27,12 +34,88 @@ public class ScielabProcessor {
 			{1.36986, 0.93476, 0.43623},
 			{1.50565, 1.42132, 2.53602}
 	};
+	private static final double[][] weigths={
+			{1.00327,0.114416, -0.117686},
+			{0.616725, 0.383275},
+			{0.567885, 0.432115}
+	};
+	private static final double[][] halfwidths={
+			{0.05,0.225,7.0},
+			{0.0685,0.33},
+			{0.0920,0.6451}
+	};
 	private double[][][] Ofilters;
-	private int uprate;
 
-	public ScielabProcessor(Integer dpi, Double viewingDistance)
+	public ScielabProcessor(int dpi, double viewingDistance)
 	{
+		//Calculate the uprate for filter creation :
+		int uprate;
+		int sampPerDeg = (int)Math.round(dpi *(180/Math.PI)*Math.atan(2.54/viewingDistance));
+		if(sampPerDeg < minSAMPPERDEG)
+		{
+			uprate = (int)Math.ceil(minSAMPPERDEG/sampPerDeg);
+			sampPerDeg *= uprate;
+		}else
+		{
+			uprate = 1;
+		}
 
+		//We convert the halfwidths from visual angle to pixels (by multiplying all of them by the number of samples per degree)
+		int finalSampPerDeg = sampPerDeg;
+		double[][] spreads = (double[][])Arrays.stream(halfwidths).map(arr-> Arrays.stream(arr).map(e-> e* finalSampPerDeg).toArray()).toArray();
+
+		//We limit the width of the filters to 1 degree of visual angle and to a odd number of points
+		int width = (sampPerDeg/2)*2+1;
+		//Generating the separable filters
+		Ofilters = new double[3][][];
+		Ofilters[0] = new double[3][];
+		Ofilters[0][0] = Arrays.stream(gauss(spreads[0][0], width)).map(e->e*Math.sqrt(Math.abs(weigths[0][0])) * Math.signum(weigths[0][0])).toArray();
+		Ofilters[0][1] = Arrays.stream(gauss(spreads[0][1], width)).map(e->e*Math.sqrt(Math.abs(weigths[0][1])) * Math.signum(weigths[0][1])).toArray();
+		Ofilters[0][2] = Arrays.stream(gauss(spreads[0][2], width)).map(e->e*Math.sqrt(Math.abs(weigths[0][2])) * Math.signum(weigths[0][2])).toArray();
+		Ofilters[1] = new double[2][];
+		Ofilters[1][0] = Arrays.stream(gauss(spreads[1][0], width)).map(e->e*Math.sqrt(Math.abs(weigths[1][0])) * Math.signum(weigths[1][0])).toArray();
+		Ofilters[1][1] = Arrays.stream(gauss(spreads[1][1], width)).map(e->e*Math.sqrt(Math.abs(weigths[1][1])) * Math.signum(weigths[1][1])).toArray();
+		Ofilters[2] = new double[2][];
+		Ofilters[2][0] = Arrays.stream(gauss(spreads[2][0], width)).map(e->e*Math.sqrt(Math.abs(weigths[2][0])) * Math.signum(weigths[2][0])).toArray();
+		Ofilters[2][1] = Arrays.stream(gauss(spreads[2][1], width)).map(e->e*Math.sqrt(Math.abs(weigths[2][1])) * Math.signum(weigths[2][1])).toArray();
+
+
+	}
+
+	public static double[] convolve(double[] data, double[] filter, int dataw, int filterw)
+	{
+		//TODO
+		return null;
+	}
+
+	private static double[] conv1D(double[] data, double[] filter)
+	{
+		//TODO
+		return null;
+	}
+
+	/**
+	 * Returns a centered gaussian that sums to one
+	 * @param halfwidth halfwidth of the gaussian, must be > 1
+	 * @param width number of sample points
+	 * @return the genrated gaussian, sums to 1
+	 */
+	public static double[] gauss(double halfwidth, int width)
+	{
+		double alpha = 2*Math.sqrt(Math.log(2))/(halfwidth-1);
+		double[] result = new double[width];
+		int offset = width/2;
+		double sum=0;
+		for(int i=0; i<width;i++)
+		{
+			result[i] = Math.exp(-alpha*alpha*(i-offset)*(i-offset));
+			sum += result[i];
+		}
+		for(int i=0; i<width;i++)
+		{
+			result[i]/=sum;
+		}
+		return result;
 	}
 
 	/**

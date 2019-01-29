@@ -104,7 +104,7 @@ public class HybridQuantization extends EzPlug {
 		//S-CIELAB Visual Settings
 		EzLabel EzscielabWarning = new EzLabel("Keep these parameters to default for computing purposes. \nFor visual purposes, use your screen's specifications");
 		Ezdpi = new EzVarInteger("Dpi", 90, 1, Integer.MAX_VALUE, 1);
-		EzViewingDistance = new EzVarDouble("Viewing distance", 45, 1, Double.MAX_VALUE, 1);
+		EzViewingDistance = new EzVarDouble("Viewing distance", 70, 1, Double.MAX_VALUE, 1);
 		EzGroup scielabGroup = new EzGroup("S-CIELAB", EzscielabWarning, Ezdpi, EzViewingDistance);
 
 		super.addEzComponent(EzinputSeq);
