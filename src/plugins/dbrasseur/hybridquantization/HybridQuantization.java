@@ -21,7 +21,7 @@ public class HybridQuantization extends EzPlug {
 
 	private EzVarSequence	EzinputSeq;				//Image Sequence
 	private EzVarInteger	EznbOfColors;			//Number of colors to be used
-	private EzVarBoolean    EzUniformization;       //Should the algorithm choose the palette over the whole sequence ?
+	private EzVarBoolean    EzUniformization;       //Uniform fake palette from the individual palettes
 	
 	//General optimization parameters
 	private EzVarInteger	EzpopulationSize;		//Population size (not supported yet)
@@ -40,6 +40,7 @@ public class HybridQuantization extends EzPlug {
 	//S-CIELAB Visual Settings
 	private EzVarInteger    Ezdpi;                  //Dots per inch of the monitor
 	private EzVarDouble     EzViewingDistance;      //Viewing distance in cm
+	private EzVarEnum       EzWhitePoint;           //Whitepoint
 	
 	
 	@Override
@@ -49,23 +50,30 @@ public class HybridQuantization extends EzPlug {
 
 	@Override
 	protected void execute() {
-	
-		if(EzUniformization.getValue())
-		{
-			uniformQuantization(EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue());
-		}else
-		{
-			quantization(EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue());
-		}
-		
+		quantization(EzUniformization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
 	}
 
-	private void uniformQuantization(Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance) {
-	}
+	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
+		IcyBufferedImage im = seq.getFirstImage();
+		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
+		double[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsDouble(), im.getSizeY());
 
-	private void quantization(Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance) {
-		//One quantization per image
+		Sequence seqOut = new Sequence();
+		IcyBufferedImage imageOut =new IcyBufferedImage(seq.getSizeX(), seq.getSizeY(), seq.getSizeC(), seq.getDataType_());
+		// Copie du tableau vers la sequence
+		imageOut.beginUpdate();
+		imageOut.setDataXY(0, scImg[0]);
+		imageOut.setDataXY(1, scImg[1]);
+		imageOut.setDataXY(2, scImg[2]);
+		imageOut.endUpdate();
 
+		seqOut.addImage(imageOut);
+		seqOut.setName("Test");
+
+
+
+		// Affichage
+		addSequence(seqOut);
 	}
 
 
@@ -75,8 +83,8 @@ public class HybridQuantization extends EzPlug {
 		EzinputSeq.setToolTipText("Images to be processed");
 		EznbOfColors = new EzVarInteger("Number of colors",8,1,16777216,1);
 		EznbOfColors.setToolTipText("Target number of colors in the palette | Default : 8 | Range : [1, 2^24]");
-		EzUniformization = new EzVarBoolean("Uniform over sequence", false);
-		EzUniformization.setToolTipText("*CURRENTLY NOT SUPPORTED* If checked, the algorithm will try to find the optimal palette for all the sequence instead of each image separately | Default : false");
+		EzUniformization = new EzVarBoolean("Fake palette", false);
+		EzUniformization.setToolTipText("*CURRENTLY NOT SUPPORTED* If checked, the output sequence will have fake colors to be uniform over all the sequence | Default : false");
 
 		//General optimization parameters
 		EzpopulationSize = new EzVarInteger("Population size", 1,1,Integer.MAX_VALUE,1);
@@ -104,8 +112,12 @@ public class HybridQuantization extends EzPlug {
 		//S-CIELAB Visual Settings
 		EzLabel EzscielabWarning = new EzLabel("Keep these parameters to default for computing purposes. \nFor visual purposes, use your screen's specifications");
 		Ezdpi = new EzVarInteger("Dpi", 90, 1, Integer.MAX_VALUE, 1);
+		Ezdpi.setToolTipText("Screen dpi | Default : 90");
 		EzViewingDistance = new EzVarDouble("Viewing distance", 70, 1, Double.MAX_VALUE, 1);
-		EzGroup scielabGroup = new EzGroup("S-CIELAB", EzscielabWarning, Ezdpi, EzViewingDistance);
+		EzViewingDistance.setToolTipText("Viewing distance from the screen in cm | Default : 70");
+		EzWhitePoint = new EzVarEnum<>("White point", ScielabProcessor.Whitepoint.values(),ScielabProcessor.Whitepoint.D65);
+		EzWhitePoint.setToolTipText("White point of the image | Default : D65");
+		EzGroup scielabGroup = new EzGroup("S-CIELAB", EzscielabWarning, Ezdpi, EzViewingDistance, EzWhitePoint);
 
 		super.addEzComponent(EzinputSeq);
 		super.addEzComponent(EznbOfColors);
