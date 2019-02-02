@@ -56,16 +56,14 @@ public class HybridQuantization extends EzPlug {
 	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
 		IcyBufferedImage im = seq.getFirstImage();
 		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
-		double[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsDouble(), im.getSizeY());
-
+		double[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsDouble(), im.getSizeX());
+		//scImg = scielabProcessor.LabTosRGB(scImg, im.getSizeX());
 		Sequence seqOut = new Sequence();
-		IcyBufferedImage imageOut =new IcyBufferedImage(seq.getSizeX(), seq.getSizeY(), seq.getSizeC(), seq.getDataType_());
+		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
 		// Copie du tableau vers la sequence
-		imageOut.beginUpdate();
-		imageOut.setDataXY(0, scImg[0]);
-		imageOut.setDataXY(1, scImg[1]);
-		imageOut.setDataXY(2, scImg[2]);
-		imageOut.endUpdate();
+		imageOut.setDataXY(0, Array1DUtil.doubleArrayToArray(scImg[0], imageOut.getDataXY(0)));
+		imageOut.setDataXY(1, Array1DUtil.doubleArrayToArray(scImg[1], imageOut.getDataXY(1)));
+		imageOut.setDataXY(2, Array1DUtil.doubleArrayToArray(scImg[2], imageOut.getDataXY(2)));
 
 		seqOut.addImage(imageOut);
 		seqOut.setName("Test");

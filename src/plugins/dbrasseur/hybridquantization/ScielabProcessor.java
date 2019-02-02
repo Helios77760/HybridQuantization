@@ -20,7 +20,7 @@ public class ScielabProcessor {
 	private static final double[] D65 = {0.95047, 1.0, 1.0883};
 	private static final double[] D50 = {0.966797, 1.0, 0.825188};
 
-	private static final int minSAMPPERDEG = 224;   //As specified in the S-CIELAB example code
+	private static final int minSAMPPERDEG = 50;   //As specified in the S-CIELAB example code
 	public static final double[][] mSRGBtoXYZ = {
 			{0.4124564, 0.3575761, 0.1804375},
 			{0.2126729, 0.7151522, 0.0721750},
@@ -78,8 +78,15 @@ public class ScielabProcessor {
 		}
 
 		//We convert the halfwidths from visual angle to pixels (by multiplying all of them by the number of samples per degree)
-		int finalSampPerDeg = sampPerDeg;
-		double[][] spreads = (double[][])Arrays.stream(halfwidths).map(arr-> Arrays.stream(arr).map(e-> e* finalSampPerDeg).toArray()).toArray();
+		double[][] spreads = new double[3][];
+		for(int i = 0; i < halfwidths.length; i++)
+		{
+			spreads[i] = new double[halfwidths[i].length];
+			for(int j=0; j<halfwidths[i].length; j++)
+			{
+				spreads[i][j] = halfwidths[i][j]*sampPerDeg;
+			}
+		}
 
 		//We limit the width of the filters to 1 degree of visual angle and to a odd number of points
 		int width = (sampPerDeg/2)*2+1;
@@ -193,8 +200,8 @@ public class ScielabProcessor {
 						yoff = y;
 						if (xoff < 0) //Reflection
 							xoff = -xoff - 1;
-						if (xoff >= w)
-							xoff = w - (xoff - w + 1);
+						if (xoff >= h)
+							xoff = h - (xoff - h + 1);
 						result[x * w + y] += temp[xoff * w + yoff] * filter[foff];
 					}
 				}
@@ -394,7 +401,7 @@ public class ScielabProcessor {
 				srcBufferPixel[0] = result[0][offset];
 				srcBufferPixel[1] = result[1][offset];
 				srcBufferPixel[2] = result[2][offset];
-				outBufferPixel = XYZtoLAB(OppToXYZ(srcBufferPixel));
+				outBufferPixel = OppToXYZ(srcBufferPixel);
 				result[0][offset] = outBufferPixel[0];
 				result[1][offset] = outBufferPixel[1];
 				result[2][offset] = outBufferPixel[2];
