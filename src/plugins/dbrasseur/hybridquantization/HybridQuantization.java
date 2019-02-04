@@ -57,7 +57,9 @@ public class HybridQuantization extends EzPlug {
 		IcyBufferedImage im = seq.getFirstImage();
 		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
 		double[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsDouble(), im.getSizeX());
-		//scImg = scielabProcessor.LabTosRGB(scImg, im.getSizeX());
+		// Test visuel
+		scImg = scielabProcessor.LabTosRGB(scImg);
+
 		Sequence seqOut = new Sequence();
 		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
 		// Copie du tableau vers la sequence
@@ -66,9 +68,7 @@ public class HybridQuantization extends EzPlug {
 		imageOut.setDataXY(2, Array1DUtil.doubleArrayToArray(scImg[2], imageOut.getDataXY(2)));
 
 		seqOut.addImage(imageOut);
-		seqOut.setName("Test");
-
-
+		seqOut.setName("End");
 
 		// Affichage
 		addSequence(seqOut);
@@ -165,41 +165,6 @@ public class HybridQuantization extends EzPlug {
 			}
 		}
 		return error/(w*h*3) + penalty;
-	}
-
-
-
-	private void test(Sequence seq){
-		/*
-		IcyBufferedImage imaIn=seq.getFirstImage();
-		double[] tabIn = Array1DUtil.arrayToDoubleArray(imaIn.getDataXY(0), imaIn.isSignedDataType());	
-		// recuperation de l'image sous forme de tableau 1D
-		double[] tabOut = Array1DUtil.arrayToDoubleArray(imaIn.getDataXY(0), imaIn.isSignedDataType());	
-		
-		int w = seq.getSizeX();
-		int h = seq.getSizeY();
-		
-		// algo
-		for (int x=0; x<w; ++x)
-			for (int y=0; y<h; ++y) {
-				tabOut[x+y*w] = 255- tabIn[x+y*w];
-			}
-		
-		// Creation de la nouvelle sequence
-		Sequence seqOut = new Sequence();
-		IcyBufferedImage imageOut =new IcyBufferedImage(seq.getSizeX(), seq.getSizeY(), seq.getSizeC(), seq.getDataType_());
-		
-	
-		// Copie du tableau vers la sequence
-		imageOut.setDataXY(0, Array1DUtil.doubleArrayToArray(tabOut, imageOut.getDataXY(0)));
-		seqOut.addImage(imageOut);
-		seqOut.setName("Test");
-		
-
-
-		// Affichage
-		addSequence(seqOut);
-		*/
 	}
 	
 }

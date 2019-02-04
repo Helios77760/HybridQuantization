@@ -20,7 +20,7 @@ public class ScielabProcessor {
 	private static final double[] D65 = {0.95047, 1.0, 1.0883};
 	private static final double[] D50 = {0.966797, 1.0, 0.825188};
 
-	private static final int minSAMPPERDEG = 50;   //As specified in the S-CIELAB example code
+	private static final int minSAMPPERDEG = 224;   //As specified in the S-CIELAB example code
 	public static final double[][] mSRGBtoXYZ = {
 			{0.4124564, 0.3575761, 0.1804375},
 			{0.2126729, 0.7151522, 0.0721750},
@@ -32,14 +32,14 @@ public class ScielabProcessor {
 			{0.0556434, -0.2040259, 1.0572252}
 	};
 	public static final double[][] mXYZtoOpp = {
-			{0.279,0.72,-0.107},
-			{-0.449,0.29,-0.077},
-			{0.086,-0.59,0.501}
+			{0.2787336, 0.7218031, -0.1065520},
+			{-0.4487736,0.2898056,0.0771569},
+			{0.0859513,-0.5899859,0.5011089}
 	};
 	public static final double[][] mOpptoXYZ = {
-			{0.62655, -1.86718, -0.15316},
-			{1.36986, 0.93476, 0.43623},
-			{1.50565, 1.42132, 2.53602}
+			{0.97959616044562807864, -1.5347157012664408981, 0.44459764330437399288},
+			{1.188977906742323787, 0.7643549575179937615, 0.13512574791125839373},
+			{1.2318333139247290457, 1.1631592597636512884, 2.0784075888008567862}
 	};
 	private static final double[][] weigths={
 			{1.00327,0.114416, -0.117686},
@@ -48,7 +48,7 @@ public class ScielabProcessor {
 	};
 	private static final double[][] halfwidths={
 			{0.05,0.225,7.0},
-			{0.0685,0.33},
+			{0.0685,0.826},
 			{0.0920,0.6451}
 	};
 	private double[][][] Ofilters;
@@ -89,7 +89,7 @@ public class ScielabProcessor {
 		}
 
 		//We limit the width of the filters to 1 degree of visual angle and to a odd number of points
-		int width = (sampPerDeg/2)*2+1;
+		int width = (int)(Math.ceil(sampPerDeg/2))*2-1;
 		//Generating the separable filters
 		Ofilters = new double[3][][];
 		Ofilters[0] = new double[3][];
@@ -192,6 +192,7 @@ public class ScielabProcessor {
 					}
 				}
 			}
+			double[] absFilter = Arrays.stream(filter).map(Math::abs).toArray();
 			//Vertical
 			for (int x = 0; x < h; x++) {
 				for (int y = 0; y < w; y++) {
@@ -202,7 +203,7 @@ public class ScielabProcessor {
 							xoff = -xoff - 1;
 						if (xoff >= h)
 							xoff = h - (xoff - h + 1);
-						result[x * w + y] += temp[xoff * w + yoff] * filter[foff];
+						result[x * w + y] += temp[xoff * w + yoff] * absFilter[foff];
 					}
 				}
 			}
@@ -291,12 +292,12 @@ public class ScielabProcessor {
 	{
 		return new double[]{
 				C[0]*M[0][0] + C[1]*M[0][1] + C[2]*M[0][2],
-				C[1]*M[1][0] + C[1]*M[1][1] + C[2]*M[1][2],
-				C[2]*M[2][0] + C[1]*M[2][1] + C[2]*M[2][2],
+				C[0]*M[1][0] + C[1]*M[1][1] + C[2]*M[1][2],
+				C[0]*M[2][0] + C[1]*M[2][1] + C[2]*M[2][2],
 		};
 	}
 
-	private static double[] sRGBtoXYZ(double[] sRGB)
+	public static double[] sRGBtoXYZ(double[] sRGB)
 	{
 		double[] RGB = {sRGB[0] <= 0.04045 ? sRGB[0]/12.92 : Math.pow((sRGB[0]+0.055)/1.055,2.4),
 				sRGB[1] <= 0.04045 ? sRGB[1]/12.92 : Math.pow((sRGB[1]+0.055)/1.055,2.4),
@@ -304,7 +305,7 @@ public class ScielabProcessor {
 		return matrixColorConvert(RGB, mSRGBtoXYZ);
 	}
 
-	private static double[] XYZtosRGB(double[] XYZ)
+	public static double[] XYZtosRGB(double[] XYZ)
 	{
 		double[] RGB = matrixColorConvert(XYZ, mXYZtoSRGB);
 		return new double[]{
@@ -314,12 +315,12 @@ public class ScielabProcessor {
 		};
 	}
 
-	private static double[] XYZtoOpp(double[] XYZ)
+	public static double[] XYZtoOpp(double[] XYZ)
 	{
 		return matrixColorConvert(XYZ, mXYZtoOpp);
 	}
 
-	private static double[] OppToXYZ(double[] Opp)
+	public static double[] OppToXYZ(double[] Opp)
 	{
 		return matrixColorConvert(Opp, mOpptoXYZ);
 	}
@@ -330,9 +331,9 @@ public class ScielabProcessor {
 		double fy = LAB_f(XYZ[1]/ illuminant[1]);
 		double fz = LAB_f(XYZ[2]/ illuminant[2]);
 		return new double[]{
-				116*fy-16,
-				500*(fx-fy),
-				200*(fy-fz)
+				116.0*fy-16.0,
+				500.0*(fx-fy),
+				200.0*(fy-fz)
 		};
 	}
 
@@ -350,7 +351,7 @@ public class ScielabProcessor {
 	private static double LAB_f(double t)
 	{
 		double delta = 6.0/29.0;
-		return t > delta*delta*delta ? Math.pow(t, 1.0/3.0) : t/(3*delta*delta) + 4.0/29.0;
+		return (t > delta*delta*delta ? Math.pow(t, 1.0/3.0) : t/(3*delta*delta) + 4.0/29.0);
 	}
 
 	private static double LAB_finv(double t)
@@ -401,7 +402,7 @@ public class ScielabProcessor {
 				srcBufferPixel[0] = result[0][offset];
 				srcBufferPixel[1] = result[1][offset];
 				srcBufferPixel[2] = result[2][offset];
-				outBufferPixel = OppToXYZ(srcBufferPixel);
+				outBufferPixel = XYZtoLAB(OppToXYZ(srcBufferPixel));
 				result[0][offset] = outBufferPixel[0];
 				result[1][offset] = outBufferPixel[1];
 				result[2][offset] = outBufferPixel[2];
@@ -410,26 +411,38 @@ public class ScielabProcessor {
 		return result;
 	}
 
-	public double[][] LabTosRGB(double[][] image, int w)
+	public double[][] LabTosRGB(double[][] image)
 	{
 		double[][] result = new double[3][image[0].length];
-		int h = image[0].length/(w);
-		int offset;
 		double[] srcBufferPixel = new double[3];
 		double[] outBufferPixel;
-		for(int x=0; x<h; x++)
+		for(int i=0; i < image[0].length; i++)
 		{
-			for(int y=0; y<w; y++)
-			{
-				offset = x*w + y;
-				srcBufferPixel[0] = result[0][offset];
-				srcBufferPixel[1] = result[1][offset];
-				srcBufferPixel[2] = result[2][offset];
-				outBufferPixel = XYZtosRGB(LABtoXYZ(srcBufferPixel));
-				result[0][offset] = outBufferPixel[0];
-				result[1][offset] = outBufferPixel[1];
-				result[2][offset] = outBufferPixel[2];
-			}
+			srcBufferPixel[0] = image[0][i];
+			srcBufferPixel[1] = image[1][i];
+			srcBufferPixel[2] = image[2][i];
+			outBufferPixel = XYZtosRGB(LABtoXYZ(srcBufferPixel));
+			result[0][i] = outBufferPixel[0];
+			result[1][i] = outBufferPixel[1];
+			result[2][i] = outBufferPixel[2];
+		}
+		return result;
+	}
+
+	public double[][] sRGBtoLab(double[][] image)
+	{
+		double[][] result = new double[3][image[0].length];
+		double[] srcBufferPixel = new double[3];
+		double[] outBufferPixel;
+		for(int i=0; i < image[0].length; i++)
+		{
+			srcBufferPixel[0] = image[0][i];
+			srcBufferPixel[1] = image[1][i];
+			srcBufferPixel[2] = image[2][i];
+			outBufferPixel = XYZtoLAB(sRGBtoXYZ(srcBufferPixel));
+			result[0][i] = outBufferPixel[0];
+			result[1][i] = outBufferPixel[1];
+			result[2][i] = outBufferPixel[2];
 		}
 		return result;
 	}
