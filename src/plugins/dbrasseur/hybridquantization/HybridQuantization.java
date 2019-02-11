@@ -10,7 +10,6 @@ import icy.type.collection.array.Array1DUtil;
 import icy.util.Random;
 import plugins.adufour.ezplug.*;
 
-
 /**
  * Implementation of "HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL" by Schaefer and Nolle
  * @author Dylan Brasseur
@@ -61,6 +60,7 @@ public class HybridQuantization extends EzPlug {
 		scImg = scielabProcessor.LabTosRGB(scImg);
 
 		Sequence seqOut = new Sequence();
+
 		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
 		// Copie du tableau vers la sequence
 		imageOut.setDataXY(0, Array1DUtil.doubleArrayToArray(scImg[0], imageOut.getDataXY(0)));
@@ -77,6 +77,7 @@ public class HybridQuantization extends EzPlug {
 
 	@Override
 	protected void initialize() {
+		super.setTimeDisplay(true);
 		EzinputSeq = new EzVarSequence("Input");
 		EzinputSeq.setToolTipText("Images to be processed");
 		EznbOfColors = new EzVarInteger("Number of colors",8,1,16777216,1);

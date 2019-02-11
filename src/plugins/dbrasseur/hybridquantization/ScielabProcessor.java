@@ -1,14 +1,13 @@
 package plugins.dbrasseur.hybridquantization;
 
-import icy.image.colorspace.IcyColorSpace;
 import icy.type.collection.array.Array1DUtil;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.IntStream;
 
 import static java.util.stream.Collectors.toList;
+
 
 /**
  * Class for S-cielab processing
@@ -53,6 +52,12 @@ public class ScielabProcessor {
 	};
 	private double[][][] Ofilters;
 	private double[] illuminant;
+	private ImageManipulation convolution;
+
+	private final double LABDELTA = 6.0/29.0;
+	private final double LABDELTA2 = LABDELTA*LABDELTA;
+	private final double LABDELTA3= LABDELTA2*LABDELTA;
+
 
 	public ScielabProcessor(int dpi, double viewingDistance, Whitepoint whitepoint)
 	{
@@ -155,61 +160,10 @@ public class ScielabProcessor {
 			Ofilters[2][0] = extractWithIndices(ups[2][0], downs);
 			Ofilters[2][1] = extractWithIndices(ups[2][1], downs);
 		}
-
+		convolution = new ImageManipulation();
 	}
 
-	/**
-	 * Executes the sum of convolutions of different filters on the data in horizontal and vertical direction
-	 * Padding is done by reflection
-	 * @param data data to convolve
-	 * @param filters filters
-	 * @param w width of the data
-	 * @return convoluted data
-	 */
-	public static double[] convolveSeparable(double[] data, double[][] filters, int w)
-	{
-		if(filters.length == 0)
-			return Arrays.copyOf(data, data.length);
-		double[] result = new double[data.length];
-		double[] temp = new double[data.length];
-		Array1DUtil.fill(result, 0.0);
-		Array1DUtil.fill(temp, 0.0);
-		int h = data.length/w;
-		int xoff, yoff;
-		for (double[] filter : filters) {
-			int fmid = filter.length / 2;
-			//Horizontal
-			for (int x = 0; x < h; x++) {
-				for (int y = 0; y < w; y++) {
-					for (int foff = 0; foff < filter.length; foff++) {
-						xoff = x;
-						yoff = y - fmid + foff;
-						if (yoff < 0) //Reflection
-							yoff = -yoff - 1;
-						if (yoff >= w)
-							yoff = w - (yoff - w + 1);
-						temp[x * w + y] += data[xoff * w + yoff] * filter[foff];
-					}
-				}
-			}
-			double[] absFilter = Arrays.stream(filter).map(Math::abs).toArray();
-			//Vertical
-			for (int x = 0; x < h; x++) {
-				for (int y = 0; y < w; y++) {
-					for (int foff = 0; foff < filter.length; foff++) {
-						xoff = x - fmid + foff;
-						yoff = y;
-						if (xoff < 0) //Reflection
-							xoff = -xoff - 1;
-						if (xoff >= h)
-							xoff = h - (xoff - h + 1);
-						result[x * w + y] += temp[xoff * w + yoff] * absFilter[foff];
-					}
-				}
-			}
-		}
-		return result;
-	}
+
 
 	private static double[] conv1D(double[] data, double[] filter)
 	{
@@ -305,13 +259,47 @@ public class ScielabProcessor {
 		return matrixColorConvert(RGB, mSRGBtoXYZ);
 	}
 
+	public double[] sRGBtoOpp(double[] RGB)
+	{
+		//Gamma correction
+		double R = (RGB[0] <= 0.04045) ? (RGB[0] / 12.92) : Math.pow((RGB[0] + 0.055) / 1.055, 2.4);
+		double G = (RGB[1] <= 0.04045) ? (RGB[1] / 12.92) : Math.pow((RGB[1] + 0.055) / 1.055, 2.4);
+		double B = (RGB[2] <= 0.04045) ? (RGB[2] / 12.92) : Math.pow((RGB[2] + 0.055) / 1.055, 2.4);
+		//Matrix multiplication XYZ2OPP*RGB2XYZ*RGB
+		return new double[]{
+				0.26641335000823*R + 0.60316740257478*G + 0.0011333302293*B,
+				-0.12197400229389*R+ 0.05598088396616*G + 0.01326365114329*B,
+				-0.08033445917708*R+ -0.33146741170125*G + 0.44913244757774*B
+		};
+	}
+
+	public double[] OpptosLab(double[] Opp)
+	{
+		//Matrix multiplication Opp2XYZ*Opp
+		double X = 0.97959616044562807864*Opp[0] + -1.5347157012664408981*Opp[1] + 0.44459764330437399288*Opp[2];
+		double Y = 1.188977906742323787*Opp[0] + 0.7643549575179937615*Opp[1] + 0.13512574791125839373*Opp[2];
+		double Z = 1.2318333139247290457*Opp[0] + 1.1631592597636512884*Opp[1] + 2.0784075888008567862*Opp[2];
+		//XYZtoLAB
+		double t = X/illuminant[0];
+		double fx = (t > LABDELTA3) ? Math.pow(t, 1.0 / 3.0) : ((t / (3 * LABDELTA2)) + (4.0 / 29.0));
+		t = Y/illuminant[1];
+		double fy = (t > LABDELTA3) ? Math.pow(t, 1.0 / 3.0) : ((t / (3 * LABDELTA2)) + (4.0 / 29.0));
+		t = Z/illuminant[2];
+		double fz = (t > LABDELTA3) ? Math.pow(t, 1.0 / 3.0) : ((t / (3 * LABDELTA2)) + (4.0 / 29.0));
+		return new double[]{
+				116.0*fy-16.0,
+				500.0*(fx-fy),
+				200.0*(fy-fz)
+		};
+	}
+
 	public static double[] XYZtosRGB(double[] XYZ)
 	{
 		double[] RGB = matrixColorConvert(XYZ, mXYZtoSRGB);
 		return new double[]{
 				RGB[0] <= 0.0031308 ? RGB[0]*12.92 : Math.pow(RGB[0]*1.055, 1/2.4)-0.055,
 				RGB[1] <= 0.0031308 ? RGB[1]*12.92 : Math.pow(RGB[1]*1.055, 1/2.4)-0.055,
-				RGB[2] <= 0.0031308 ? RGB[2]*12.92 : Math.pow(RGB[2]*1.055, 1/2.4)-0.055,
+				RGB[2] <= 0.0031308 ? RGB[2]*12.92 : Math.pow(RGB[2]*1.055, 1/2.4)-0.055
 		};
 	}
 
@@ -369,12 +357,29 @@ public class ScielabProcessor {
 	public double[][] imageToScielab(double[][] image, int w)
 	{
 		double[][] result = new double[3][image[0].length];
-		int h = image[0].length/(w);
-		int offset;
-		double[] srcBufferPixel = new double[3];
-		double[] outBufferPixel;
+
 		//First we convert to XYZ and then to Poirson&Wandell opponent
-		for(int x=0; x<h; x++)
+
+		double[][] XYC = new double[result[0].length][3];
+
+		for(int i=0; i<XYC.length;i++)
+		{
+			XYC[i][0]=image[0][i];
+			XYC[i][1]=image[1][i];
+			XYC[i][2]=image[2][i];
+		}
+
+		Arrays.parallelSetAll(XYC, i->sRGBtoOpp(XYC[i]));
+
+		//-> Converting back to [C][XY]
+		for(int i=0; i<XYC.length;i++)
+		{
+			result[0][i]=XYC[i][0];
+			result[1][i]=XYC[i][1];
+			result[2][i]=XYC[i][2];
+		}
+
+		/*for(int x=0; x<h; x++)
 		{
 			for(int y=0; y<w; y++)
 			{
@@ -387,14 +392,30 @@ public class ScielabProcessor {
 				result[1][offset] = outBufferPixel[1];
 				result[2][offset] = outBufferPixel[2];
 			}
-		}
+		}*/
+
 		//Then we apply filters to mimic human vision
-		result[0] = convolveSeparable(result[0], Ofilters[0], w);
-		result[1] = convolveSeparable(result[1], Ofilters[1], w);
-		result[2] = convolveSeparable(result[2], Ofilters[2], w);
+		convolution.convolve(result, Ofilters, w);
+
+		for(int i=0; i<XYC.length;i++)
+		{
+			XYC[i][0]=result[0][i];
+			XYC[i][1]=result[1][i];
+			XYC[i][2]=result[2][i];
+		}
 
 		//Switch back to XYZ and then to LAB
-		for(int x=0; x<h; x++)
+		Arrays.parallelSetAll(XYC, i->OpptosLab(XYC[i]));
+
+		//-> Converting back to [C][XY]
+		for(int i=0; i<XYC.length;i++)
+		{
+			result[0][i]=XYC[i][0];
+			result[1][i]=XYC[i][1];
+			result[2][i]=XYC[i][2];
+		}
+
+		/*for(int x=0; x<h; x++)
 		{
 			for(int y=0; y<w; y++)
 			{
@@ -407,7 +428,7 @@ public class ScielabProcessor {
 				result[1][offset] = outBufferPixel[1];
 				result[2][offset] = outBufferPixel[2];
 			}
-		}
+		}*/
 		return result;
 	}
 
@@ -445,5 +466,10 @@ public class ScielabProcessor {
 			result[2][i] = outBufferPixel[2];
 		}
 		return result;
+	}
+
+	public void close()
+	{
+		convolution.close();
 	}
 }
