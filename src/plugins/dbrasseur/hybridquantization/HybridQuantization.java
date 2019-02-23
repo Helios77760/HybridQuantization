@@ -10,6 +10,8 @@ import icy.type.collection.array.Array1DUtil;
 import icy.util.Random;
 import plugins.adufour.ezplug.*;
 
+import java.util.ArrayList;
+
 /**
  * Implementation of "HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL" by Schaefer and Nolle
  * @author Dylan Brasseur
@@ -17,6 +19,9 @@ import plugins.adufour.ezplug.*;
  *
  */
 public class HybridQuantization extends EzPlug {
+
+    public static EzGroup   perfLabels;
+    public static long      perfTime;
 
 	private EzVarSequence	EzinputSeq;				//Image Sequence
 	private EzVarInteger	EznbOfColors;			//Number of colors to be used
@@ -53,12 +58,13 @@ public class HybridQuantization extends EzPlug {
 	}
 
 	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
+	    perfTime = System.currentTimeMillis();
 		IcyBufferedImage im = seq.getFirstImage();
 		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
+        perfTime = addPerfLabel(perfTime, "Init scielab");
 		double[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsDouble(), im.getSizeX());
 		// Test visuel
 		scImg = scielabProcessor.LabTosRGB(scImg);
-
 		Sequence seqOut = new Sequence();
 
 		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
@@ -124,6 +130,8 @@ public class HybridQuantization extends EzPlug {
 		super.addEzComponent(optimizationGroup);
 		super.addEzComponent(stepSizeGroup);
 		super.addEzComponent(scielabGroup);
+		perfLabels = new EzGroup("Perfs");
+		super.addEzComponent(perfLabels);
 
 		scielabGroup.setFoldedState(true);
 
@@ -167,5 +175,11 @@ public class HybridQuantization extends EzPlug {
 		}
 		return error/(w*h*3) + penalty;
 	}
+
+	public static long addPerfLabel(long start, String message)
+    {
+        perfLabels.add(new EzLabel(message + ":"+ (System.currentTimeMillis()-start)));
+        return System.currentTimeMillis();
+    }
 	
 }

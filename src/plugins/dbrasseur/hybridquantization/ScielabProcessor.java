@@ -54,9 +54,9 @@ public class ScielabProcessor {
 	private double[] illuminant;
 	private ImageManipulation convolution;
 
-	private final double LABDELTA = 6.0/29.0;
-	private final double LABDELTA2 = LABDELTA*LABDELTA;
-	private final double LABDELTA3= LABDELTA2*LABDELTA;
+	private static final double LABDELTA = 6.0/29.0;
+	private static final double LABDELTA2 = LABDELTA*LABDELTA;
+	private static final double LABDELTA3= LABDELTA2*LABDELTA;
 
 
 	public ScielabProcessor(int dpi, double viewingDistance, Whitepoint whitepoint)
@@ -361,7 +361,7 @@ public class ScielabProcessor {
 		//First we convert to XYZ and then to Poirson&Wandell opponent
 
 		double[][] XYC = new double[result[0].length][3];
-
+		long time = System.currentTimeMillis();
 		for(int i=0; i<XYC.length;i++)
 		{
 			XYC[i][0]=image[0][i];
@@ -378,6 +378,7 @@ public class ScielabProcessor {
 			result[1][i]=XYC[i][1];
 			result[2][i]=XYC[i][2];
 		}
+		HybridQuantization.perfTime = HybridQuantization.addPerfLabel(time, "RGB2Opp");
 
 		/*for(int x=0; x<h; x++)
 		{
@@ -396,6 +397,7 @@ public class ScielabProcessor {
 
 		//Then we apply filters to mimic human vision
 		convolution.convolve(result, Ofilters, w);
+		HybridQuantization.perfTime = HybridQuantization.addPerfLabel(HybridQuantization.perfTime, "Convolution");
 
 		for(int i=0; i<XYC.length;i++)
 		{
@@ -414,6 +416,7 @@ public class ScielabProcessor {
 			result[1][i]=XYC[i][1];
 			result[2][i]=XYC[i][2];
 		}
+		HybridQuantization.perfTime = HybridQuantization.addPerfLabel(HybridQuantization.perfTime, "Opp2LAB");
 
 		/*for(int x=0; x<h; x++)
 		{
