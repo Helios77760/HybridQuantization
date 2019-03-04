@@ -2,6 +2,7 @@ package plugins.dbrasseur.hybridquantization;
 
 import icy.gui.dialog.MessageDialog;
 import icy.image.IcyBufferedImage;
+import icy.image.IcyBufferedImageUtil;
 import icy.image.colorspace.IcyColorSpace;
 import icy.plugin.abstract_.PluginActionable;
 import icy.sequence.Sequence;
@@ -61,17 +62,17 @@ public class HybridQuantization extends EzPlug {
 	    perfTime = System.currentTimeMillis();
 		IcyBufferedImage im = seq.getFirstImage();
 		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
-        perfTime = addPerfLabel(perfTime, "Init scielab");
-		double[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsDouble(), im.getSizeX());
+        //perfTime = addPerfLabel(perfTime, "Init scielab");
+		float[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsFloat(), im.getSizeX());
 		// Test visuel
-		scImg = scielabProcessor.LabTosRGB(scImg);
+		//scImg = scielabProcessor.LabTosRGB(scImg);
 		Sequence seqOut = new Sequence();
 
 		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
 		// Copie du tableau vers la sequence
-		imageOut.setDataXY(0, Array1DUtil.doubleArrayToArray(scImg[0], imageOut.getDataXY(0)));
-		imageOut.setDataXY(1, Array1DUtil.doubleArrayToArray(scImg[1], imageOut.getDataXY(1)));
-		imageOut.setDataXY(2, Array1DUtil.doubleArrayToArray(scImg[2], imageOut.getDataXY(2)));
+		imageOut.setDataXY(0, Array1DUtil.floatArrayToArray(scImg[0], imageOut.getDataXY(0)));
+		imageOut.setDataXY(1, Array1DUtil.floatArrayToArray(scImg[1], imageOut.getDataXY(1)));
+		imageOut.setDataXY(2, Array1DUtil.floatArrayToArray(scImg[2], imageOut.getDataXY(2)));
 
 		seqOut.addImage(imageOut);
 		seqOut.setName("End");
@@ -116,10 +117,10 @@ public class HybridQuantization extends EzPlug {
 
 		//S-CIELAB Visual Settings
 		EzLabel EzscielabWarning = new EzLabel("Keep these parameters to default for computing purposes. \nFor visual purposes, use your screen's specifications");
-		Ezdpi = new EzVarInteger("Dpi", 90, 1, Integer.MAX_VALUE, 1);
-		Ezdpi.setToolTipText("Screen dpi | Default : 90");
-		EzViewingDistance = new EzVarDouble("Viewing distance", 70, 1, Double.MAX_VALUE, 1);
-		EzViewingDistance.setToolTipText("Viewing distance from the screen in cm | Default : 70");
+		Ezdpi = new EzVarInteger("Dpi", 72, 1, Integer.MAX_VALUE, 1);
+		Ezdpi.setToolTipText("Screen dpi | Default : 72");
+		EzViewingDistance = new EzVarDouble("Viewing distance", 45, 1, Double.MAX_VALUE, 1);
+		EzViewingDistance.setToolTipText("Viewing distance from the screen in cm | Default : 45");
 		EzWhitePoint = new EzVarEnum<>("White point", ScielabProcessor.Whitepoint.values(),ScielabProcessor.Whitepoint.D65);
 		EzWhitePoint.setToolTipText("White point of the image | Default : D65");
 		EzGroup scielabGroup = new EzGroup("S-CIELAB", EzscielabWarning, Ezdpi, EzViewingDistance, EzWhitePoint);

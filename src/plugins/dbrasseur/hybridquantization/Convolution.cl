@@ -45,7 +45,7 @@ __kernel void convolve2D_mirror(__global float* input, 	// the input image as a 
 		inY = y + kY;
 		// mirror boundary condition
 		if (inY < 0) {
-			inY = -inY + 1;
+			inY = -inY - 1;
 		} else if (inY >= inputHeight) {
 			inY = (inputHeight << 1) - inY - 1;
 		}
@@ -55,7 +55,7 @@ __kernel void convolve2D_mirror(__global float* input, 	// the input image as a 
 			inX = x + kX;
 			// mirror boundary condition
 			if (inX < 0) {
-				inX = -inX + 1;
+				inX = -inX - 1;
 			} else if (inX >= inputWidth) {
 				inX = (inputWidth << 1) - inX - 1;
 			}
