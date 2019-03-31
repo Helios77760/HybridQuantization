@@ -1,21 +1,74 @@
-/* Convolution of 3 channels horizontally in an optimized way for a separable convolution and output w/h flipping
-__kernel void convolve3Channels(    const __global float3* input,
-                                    __constant float3* kernel,
-                                    __global float3* output)
+//Convolution of 4 channels horizontally in an optimized way for a separable convolution and output w/h flipping
+__kernel void convolve4Channels(    const __global float4* input,
+                                    __constant float4* k,
+                                    int halfSize,
+                                    int imageW,
+                                    int imageH,
+                                    int update,
+                                    __global float4* output)
 {
     const int pixel = get_global_id(0);
+    // pixel = i*w +j
+    const int j = pixel%imageW;
+    const int linestart = (pixel/imageW)*imageW;
+    const int outPixel = j*imageH + (pixel/imageW);
+    float4 temp = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    int off;
+    int kOff=0;
+    for(int i=-halfSize; i < halfSize; i++)
+    {
+        off = j+i;
+        if(off < 0)
+            off = -off-1;
+        if(off >= imageW)
+            off = (imageW << 1)-off-1;
+        temp+=input[linestart+off]*k[kOff++];
+    }
+    if(update == 0)
+    {
+        output[outPixel]=temp;
+    }else
+    {
+        output[outPixel]+=temp;
+    }
+
 
 
 }
-// Convolution of a specific channel horizontally for a separable convolution and output w/h flipping
-__kernel void convolve1Channel(    const __global float3* input,
-                                    __constant float3* kernel,
-                                    __global float3* output)
+//Convolution of a specific channel horizontally for a separable convolution and output w/h flipping
+__kernel void convolve1Channel(    const __global float4* input,
+                                   __constant float* k,
+                                   int halfSize,
+                                   int imageW,
+                                   int imageH,
+                                   int update,
+                                   __global float4* output)
 {
     const int pixel = get_global_id(0);
-
-
-}*/
+    // pixel = i*w +j
+    const int j = pixel%imageW;
+    const int linestart = (pixel/imageW)*imageW;
+    const int outPixel = j*imageH + (pixel/imageW);
+    float4 temp = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    int off;
+    int kOff=0;
+    for(int i=-halfSize; i < halfSize; i++)
+    {
+        off = j+i;
+        if(off < 0)
+            off = -off-1;
+        if(off >= imageW)
+            off = (imageW << 1)-off-1;
+        temp.x+=input[linestart+off].x*k[kOff++];
+    }
+    if(update == 0)
+    {
+        output[outPixel].x=temp.x;
+    }else
+    {
+        output[outPixel].x+=temp.x;
+    }
+}
 
 //We have to use float4 instead of float3 because of compatibility with OpenCL 1.0 and alignment issues
 __constant float4 RGB2XYZm[3] = {(float4)(0.4124564f, 0.3575761f, 0.1804375f,0.0f),(float4)(0.2126729f, 0.7151522f, 0.0721750f,0.0f),(float4)(0.0193339f, 0.1191920f, 0.9503041f,0.0f)};
@@ -49,4 +102,34 @@ __kernel void XYZ2RGB(  __global float4* inputXYZ,
     Rout[pixel] = (R <= 0.0031308f ? R*12.92f : pow(R*1.055f, inv)-0.055f);
     Gout[pixel] = (G <= 0.0031308f ? G*12.92f : pow(G*1.055f, inv)-0.055f);
     Bout[pixel] = (B <= 0.0031308f ? B*12.92f : pow(B*1.055f, inv)-0.055f);
+}
+__constant float4 XYZ2Oppm[3] = {(float4)(0.2787336f, 0.7218031f, -0.1065520f, 0.0f),(float4)(-0.4487736f,0.2898056f,0.0771569f, 0.0f),(float4)(0.0859513f,-0.5899859f,0.5011089f, 0.0f)};
+__kernel void XYZ2Opp(  __global float4* inputXYZ,
+                        __global float4* output)
+{
+    const int pixel = get_global_id(0);
+    output[pixel] = (float4)(dot(inputXYZ[pixel], XYZ2Oppm[0]),dot(inputXYZ[pixel], XYZ2Oppm[1]),dot(inputXYZ[pixel], XYZ2Oppm[2]), 0.0f);
+}
+__constant float4 Opp2XYZm[3] = {(float4)(0.97959616044562807864f, -1.5347157012664408981f, 0.44459764330437399288f, 0.0f),(float4)(1.188977906742323787f, 0.7643549575179937615f, 0.13512574791125839373f, 0.0f),(float4)(1.2318333139247290457f, 1.1631592597636512884f, 2.0784075888008567862f, 0.0f)};
+__constant float LABDELTA = 6.0f/29.0f;
+__constant float LABDELTA2 = 36.0f/841.0f;
+__constant float LABDELTA3= 216.0f/24389.0f;
+__kernel void Opp2LAB(  __global float4* inputOpp,
+                        float illuminantX,
+                        float illuminantY,
+                        float illuminantZ,
+                        __global float4* output)
+{
+    const int pixel = get_global_id(0);
+    const float X = dot(inputOpp[pixel], Opp2XYZm[0]);
+    const float Y = dot(inputOpp[pixel], Opp2XYZm[1]);
+    const float Z = dot(inputOpp[pixel], Opp2XYZm[2]);
+
+    float t = X/illuminantX;
+    const float fx = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    t = Y/illuminantY;
+    const float fy = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    t = Z/illuminantZ;
+    const float fz = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    output[pixel] = (float4)(116.0f*fy-16.0f,500.0f*(fx-fy),200.0f*(fy-fz), 0.0f);
 }

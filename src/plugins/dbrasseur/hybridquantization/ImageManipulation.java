@@ -20,10 +20,12 @@ public class ImageManipulation {
     private CLQueue queue;
     private CLProgram program;
 
-    private CLKernel convolution3Kernel;
+    private CLKernel convolution4Kernel;
     private CLKernel convolution1Kernel;
     private CLKernel RGB2XYZKernel;
     private CLKernel XYZ2RGBKernel;
+    private CLKernel XYZ2OppKernel;
+    private CLKernel Opp2LABKernel;
 
     private boolean openCLAvailable;
 
@@ -37,10 +39,12 @@ public class ImageManipulation {
             String programFile = ReadText.readText(is);
             program = context.createProgram(programFile);
             program.build();
-            //convolution3Kernel = program.createKernel("convolve3Channels");
-            //convolution1Kernel = program.createKernel("convolve1Channel");
+            convolution4Kernel = program.createKernel("convolve4Channels");
+            convolution1Kernel = program.createKernel("convolve1Channel");
             RGB2XYZKernel = program.createKernel("RGB2XYZ");
             XYZ2RGBKernel = program.createKernel("XYZ2RGB");
+            XYZ2OppKernel =program.createKernel("XYZ2Opp");
+            Opp2LABKernel =program.createKernel("Opp2LAB");
             openCLAvailable=true;
         }catch (IOException e)
         {
@@ -56,6 +60,11 @@ public class ImageManipulation {
         {
             System.out.println("Warning (HybridQuantization): OpenCL drivers not found. Using basic Java implementation.");
         }
+    }
+
+    boolean getOpenCLAvailable()
+    {
+        return openCLAvailable;
     }
 
     public float[] RGBtoXYZ(float[] R,float[] G,float[] B)
@@ -311,21 +320,60 @@ public class ImageManipulation {
         if (context != null) context.release();
     }
 
-    public float[] XYZtoScielab(float[] XYZ, float[][][] filters, float[][][] absfilters,int w) {
+    public float[] XYZtoScielab(float[] XYZ, float[][][] filters, float[][][] absfilters,int w, float[] illuminant) {
 
         float[] lab = new float[XYZ.length];
-        //XYZ2Opp
+        int h=(XYZ.length/4)/w;
         if(openCLAvailable)
         {
             CLEvent event;
             queue.flush();
 
-            //Buffers on GPU
-            FloatBuffer oppBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
-            CLFloatBuffer cl_OppBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
+            float[][] filters4 = new float[3][];
+            float[][] absfilters4 = new float[3][];
+            int off;
+            for(int i=0; i<2; i++)
+            {
+                filters4[i] = new float[filters[0][i].length*4];
+                absfilters4[i] = new float[absfilters[0][i].length*4];
+                for(int j=0; j < filters[0][i].length; j++)
+                {
+                    off = j<<2;
+                    filters4[i][off] = filters[0][i][j];
+                    filters4[i][off+1] = filters[1][i][j];
+                    filters4[i][off+2] = filters[2][i][j];
+                    filters4[i][off+3] = 0.0f;
+                }
+                for(int j=0; j < filters[0][i].length; j++)
+                {
+                    off = j<<2;
+                    absfilters4[i][off] = absfilters[0][i][j];
+                    absfilters4[i][off+1] = absfilters[1][i][j];
+                    absfilters4[i][off+2] = absfilters[2][i][j];
+                    absfilters4[i][off+3] = 0.0f;
+                }
+            }
+            filters4[2] = new float[filters[0][2].length*4];
+            absfilters4[2] = new float[absfilters[0][2].length*4];
+            for(int j=0; j < filters[0][2].length; j++)
+            {
+                off = j<<2;
+                filters4[2][off] = filters[0][2][j];
+                filters4[2][off+1] = 0.0f;
+                filters4[2][off+2] = 0.0f;
+                filters4[2][off+3] = 0.0f;
+            }
+            for(int j=0; j < filters[0][2].length; j++)
+            {
+                off = j<<2;
+                absfilters4[2][off] = absfilters[0][2][j];
+                absfilters4[2][off+1] = 0.0f;
+                absfilters4[2][off+2] = 0.0f;
+                absfilters4[2][off+3] = 0.0f;
+            }
 
-            FloatBuffer convBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
-            CLFloatBuffer cl_convBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
+            HybridQuantization.perfTime = System.currentTimeMillis();
+            int[] size = {XYZ.length / 4};
 
             //Inputs on GPU
             CLFloatBuffer cl_inBuffer = context.createFloatBuffer(CLMem.Usage.Input,XYZ.length);
@@ -333,12 +381,90 @@ public class ImageManipulation {
             inBuffer.rewind();
             event = cl_inBuffer.unmap(queue, inBuffer);
 
+            //Buffers on GPU
+            //FloatBuffer oppBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
+            CLFloatBuffer cl_OppBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
+
+            //FloatBuffer convBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
+            CLFloatBuffer cl_convBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
+
+            //FloatBuffer tempBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
+            CLFloatBuffer cl_tempBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
+
+            //Filters on GPU
+
+            //Premier filtre
+            CLFloatBuffer cl_filterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filters4[0].length);
+            FloatBuffer filterBuffer = cl_filterBuffer.map(queue, CLMem.MapFlags.Write, event).put(filters4[0]);
+            filterBuffer.rewind();
+            event = cl_filterBuffer.unmap(queue, filterBuffer);
+
+            CLFloatBuffer cl_absBuffer = context.createFloatBuffer(CLMem.Usage.Input,absfilters4[0].length);
+            FloatBuffer absBuffer = cl_absBuffer.map(queue, CLMem.MapFlags.Write, event).put(absfilters4[0]);
+            absBuffer.rewind();
+            event = cl_absBuffer.unmap(queue, absBuffer);
+
+            XYZ2OppKernel.setArgs(cl_inBuffer, cl_OppBuffer);
+            event = XYZ2OppKernel.enqueueNDRange(queue, size,event);
+
+            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0].length/2, w, h, 0, cl_tempBuffer);
+            event = convolution4Kernel.enqueueNDRange(queue, size, event);
+            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0].length/2, h, w, 0, cl_convBuffer);
+            event = convolution4Kernel.enqueueNDRange(queue, size, event);
+
+            //Deuxieme filtre
+            //CLFloatBuffer cl_filterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filters4[0].length);
+            filterBuffer = cl_filterBuffer.map(queue, CLMem.MapFlags.Write, event).put(filters4[1]);
+            filterBuffer.rewind();
+            event = cl_filterBuffer.unmap(queue, filterBuffer);
+
+            //CLFloatBuffer cl_absBuffer = context.createFloatBuffer(CLMem.Usage.Input,absfilters4[0].length);
+            absBuffer = cl_absBuffer.map(queue, CLMem.MapFlags.Write, event).put(absfilters4[1]);
+            absBuffer.rewind();
+            event = cl_absBuffer.unmap(queue, absBuffer);
+
+            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0].length/2, w, h, 0, cl_tempBuffer);
+            event = convolution4Kernel.enqueueNDRange(queue, size, event);
+            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0].length/2, h, w, 1, cl_convBuffer);
+            event = convolution4Kernel.enqueueNDRange(queue, size, event);
+
+            //Troisieme filtre
+            //CLFloatBuffer cl_filterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filters4[0].length);
+            filterBuffer = cl_filterBuffer.map(queue, CLMem.MapFlags.Write, event).put(filters4[2]);
+            filterBuffer.rewind();
+            event = cl_filterBuffer.unmap(queue, filterBuffer);
+
+            //CLFloatBuffer cl_absBuffer = context.createFloatBuffer(CLMem.Usage.Input,absfilters4[0].length);
+            absBuffer = cl_absBuffer.map(queue, CLMem.MapFlags.Write, event).put(absfilters4[2]);
+            absBuffer.rewind();
+            event = cl_absBuffer.unmap(queue, absBuffer);
+
+            convolution1Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0].length/2, w, h, 0, cl_tempBuffer);
+            event = convolution1Kernel.enqueueNDRange(queue, size, event);
+            convolution1Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0].length/2, h, w, 1, cl_convBuffer);
+            event = convolution1Kernel.enqueueNDRange(queue, size, event);
+
             //Buffers on host
-            FloatBuffer labBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
+            FloatBuffer labBuffer = ByteBuffer.allocateDirect(XYZ.length*4).order(context.getByteOrder()).asFloatBuffer();
             CLFloatBuffer cl_labBuffer = context.createFloatBuffer(CLMem.Usage.Output, labBuffer, false);
 
-            //XYZ2RGBKernel.setArgs(cl_inBuffer, cl_Rbuffer, cl_Gbuffer, cl_Bbuffer);
-            event = XYZ2RGBKernel.enqueueNDRange(queue, new int[]{XYZ.length/4}, event);
+            Opp2LABKernel.setArgs(cl_convBuffer, illuminant[0], illuminant[1], illuminant[2], cl_labBuffer);
+            event = Opp2LABKernel.enqueueNDRange(queue, size, event);
+
+            cl_labBuffer.read(queue,labBuffer, true, event);
+            queue.finish();
+
+            labBuffer.get(lab);
+
+            cl_absBuffer.release();
+            cl_convBuffer.release();
+            cl_filterBuffer.release();
+            cl_inBuffer.release();
+            cl_labBuffer.release();
+            cl_OppBuffer.release();
+            cl_tempBuffer.release();
+
+            HybridQuantization.perfTime = HybridQuantization.addPerfLabel(HybridQuantization.perfTime, "Convol");
 
             return lab;
         }

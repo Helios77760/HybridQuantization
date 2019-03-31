@@ -55,6 +55,10 @@ public class ScielabProcessor {
 	private float[] illuminant;
 	private ImageManipulation imageProcessing;
 
+	private float[][] float4filters;
+	private float[][] absFloat4filters;
+	private boolean openCLfiltersPrepared;
+
 	private static final float LABDELTA = 6.0f/29.0f;
 	private static final float LABDELTA2 = LABDELTA*LABDELTA;
 	private static final float LABDELTA3= LABDELTA2*LABDELTA;
@@ -73,10 +77,10 @@ public class ScielabProcessor {
 
 		//Calculate the uprate for filter creation :
 		int uprate;
-		int sampPerDeg = (int)Math.round(dpi *(180/Math.PI)*Math.atan(2.54/viewingDistance));
+		int sampPerDeg = (int)Math.round(dpi /((180/Math.PI)*Math.atan(2.54/viewingDistance)));
 		if(sampPerDeg < minSAMPPERDEG)
 		{
-			uprate = (int)Math.ceil(minSAMPPERDEG/sampPerDeg);
+			uprate = (int)Math.ceil(minSAMPPERDEG*1.0/sampPerDeg);
 			sampPerDeg *= uprate;
 		}else
 		{
@@ -95,7 +99,7 @@ public class ScielabProcessor {
 		}
 
 		//We limit the width of the filters to 1 degree of visual angle and to a odd number of points
-		int width = (int)(Math.ceil(sampPerDeg/2))*2-1;
+		int width = (int)(Math.ceil(sampPerDeg/2.0))*2-1;
 		//Generating the separable filters
 		Ofilters = new float[3][][];
 		Ofilters[0] = new float[3][];
@@ -117,11 +121,12 @@ public class ScielabProcessor {
 		//Upsampling and downsampling
 		if(uprate > 1)
 		{
+			//HybridQuantization.addPerfLabel(HybridQuantization.perfTime, "test");
 			//Generate upsampling kernel
 			float[] upcol = new float[uprate*2-1];
 			for(int i=0; i<upcol.length; i++)
 			{
-				upcol[i] = (uprate - Math.abs(uprate - i-1))/uprate;
+				upcol[i] = (uprate - Math.abs(uprate - i-1))*1.0f/uprate;
 			}
 			//Resize it
 			upcol = resize1D(upcol, upcol.length+width-1);
@@ -165,24 +170,31 @@ public class ScielabProcessor {
 			Ofilters[1][1] = extractWithIndices(ups[1][1], downs);
 			Ofilters[2][0] = extractWithIndices(ups[2][0], downs);
 			Ofilters[2][1] = extractWithIndices(ups[2][1], downs);
-
-			absOfilters = new float[3][][];
-			absOfilters[0]= new float[3][Ofilters[0][0].length];
-			absOfilters[1]= new float[2][Ofilters[1][0].length];
-			absOfilters[2]= new float[2][Ofilters[2][0].length];
-			for(int i=0; i<absOfilters.length; i++)
+		}
+		absOfilters = new float[3][][];
+		absOfilters[0]= new float[3][];
+		absOfilters[0][0] = new float[Ofilters[0][0].length];
+		absOfilters[0][1] = new float[Ofilters[0][1].length];
+		absOfilters[0][2] = new float[Ofilters[0][2].length];
+		absOfilters[1]= new float[2][];
+		absOfilters[1][0] = new float[Ofilters[1][0].length];
+		absOfilters[1][1] = new float[Ofilters[1][1].length];
+		absOfilters[2]= new float[2][];
+		absOfilters[2][0] = new float[Ofilters[2][0].length];
+		absOfilters[2][1] = new float[Ofilters[2][1].length];
+		for(int i=0; i<absOfilters.length; i++)
+		{
+			for(int j=0; j<absOfilters[i].length;j++)
 			{
-				for(int j=0; j<absOfilters[i].length;j++)
+				for(int k=0; k<absOfilters[i][j].length; k++)
 				{
-					for(int k=0; k<absOfilters[i][j].length; k++)
-					{
-						float val = Ofilters[i][j][k];
-						absOfilters[i][j][k] = val < 0.0f ? -val : val;
-					}
+					float val = Ofilters[i][j][k];
+					absOfilters[i][j][k] = val < 0.0f ? -val : val;
 				}
 			}
 		}
 		imageProcessing = new ImageManipulation();
+		openCLfiltersPrepared =false;
 	}
 
 
@@ -378,11 +390,10 @@ public class ScielabProcessor {
 	 */
 	public float[][] imageToScielab(float[][] image, int w)
 	{
-
 		//First we convert the RGBImage to XYZ
 		float[] inlineImageXYZ = imageProcessing.RGBtoXYZ(image[0], image[1], image[2]);
 		//Then we convert to Poirson&Wandell opponent and apply the filters for S-CIELAB, then convert to CIELAB
-		float[] ImageLAB = imageProcessing.XYZtoScielab(inlineImageXYZ, Ofilters,absOfilters, w);
+		float[] ImageLAB = imageProcessing.XYZtoScielab(inlineImageXYZ, Ofilters,absOfilters, w, illuminant);
 
 		//float[] inlineImage2 = new float[4*image[0].length];
         /*for(int i=0; i<image[0].length; i++)
@@ -490,7 +501,7 @@ public class ScielabProcessor {
 				result[2][offset] = outBufferPixel[2];
 			}
 		}*/
-		return imageProcessing.XYZtoRGB(inlineImageXYZ);
+		return inlineLabToRGB(ImageLAB);
 	}
 
 	public float[][] LabTosRGB(float[][] image)
@@ -504,6 +515,22 @@ public class ScielabProcessor {
 			srcBufferPixel[1] = image[1][i];
 			srcBufferPixel[2] = image[2][i];
 			outBufferPixel = XYZtosRGB(LABtoXYZ(srcBufferPixel));
+			result[0][i] = outBufferPixel[0];
+			result[1][i] = outBufferPixel[1];
+			result[2][i] = outBufferPixel[2];
+		}
+		return result;
+	}
+
+	public float[][] inlineLabToRGB(float[] lab)
+	{
+		float[][] result = new float[3][lab.length/4];
+		float[] outBufferPixel;
+		for(int i=0; i < lab.length/4; i++)
+		{
+			int off = i << 2;
+			outBufferPixel = Arrays.copyOfRange(lab, off, off+4);
+			outBufferPixel = XYZtoLAB(sRGBtoXYZ(outBufferPixel));
 			result[0][i] = outBufferPixel[0];
 			result[1][i] = outBufferPixel[1];
 			result[2][i] = outBufferPixel[2];
