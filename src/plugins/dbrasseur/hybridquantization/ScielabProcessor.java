@@ -36,9 +36,10 @@ public class ScielabProcessor {
 			{0.0859513f,-0.5899859f,0.5011089f}
 	};
 	public static final float[][] mOpptoXYZ = {
-			{0.97959616044562807864f, -1.5347157012664408981f, 0.44459764330437399288f},
+			/*{0.97959616044562807864f, -1.5347157012664408981f, 0.44459764330437399288f},
 			{1.188977906742323787f, 0.7643549575179937615f, 0.13512574791125839373f},
-			{1.2318333139247290457f, 1.1631592597636512884f, 2.0784075888008567862f}
+			{1.2318333139247290457f, 1.1631592597636512884f, 2.0784075888008567862f}*/
+			{0.624045f, -1.87044f, -0.155304f}, {1.36606f, 0.931563f, 0.433903f}, {1.5013f, 1.41761f, 2.53307f}
 	};
 	private static final float[][] weigths={
 			{1.00327f,0.114416f, -0.117686f},
@@ -307,7 +308,7 @@ public class ScielabProcessor {
 		};
 	}
 
-	public float[] OpptosLab(float[] Opp)
+	public float[] OpptoLab(float[] Opp)
 	{
 		//Matrix multiplication Opp2XYZ*Opp
 		float X = 0.97959616044562807864f*Opp[0] + -1.5347157012664408981f*Opp[1] + 0.44459764330437399288f*Opp[2];
@@ -331,9 +332,9 @@ public class ScielabProcessor {
 	{
 		float[] RGB = matrixColorConvert(XYZ, mXYZtoSRGB);
 		return new float[]{
-				RGB[0] <= 0.0031308f ? RGB[0]*12.92f : (float)Math.pow(RGB[0]*1.055f, 1.0f/2.4f)-0.055f,
-				RGB[1] <= 0.0031308f ? RGB[1]*12.92f : (float)Math.pow(RGB[1]*1.055f, 1.0f/2.4f)-0.055f,
-				RGB[2] <= 0.0031308f ? RGB[2]*12.92f : (float)Math.pow(RGB[2]*1.055f, 1.0f/2.4f)-0.055f
+				RGB[0] <= 0.0031308f ? RGB[0]*12.92f : 1.055f*(float)Math.pow(RGB[0], 1.0f/2.4f)-0.055f,
+				RGB[1] <= 0.0031308f ? RGB[1]*12.92f : 1.055f*(float)Math.pow(RGB[1], 1.0f/2.4f)-0.055f,
+				RGB[2] <= 0.0031308f ? RGB[2]*12.92f : 1.055f*(float)Math.pow(RGB[2], 1.0f/2.4f)-0.055f
 		};
 	}
 
@@ -392,115 +393,11 @@ public class ScielabProcessor {
 	{
 		//First we convert the RGBImage to XYZ
 		float[] inlineImageXYZ = imageProcessing.RGBtoXYZ(image[0], image[1], image[2]);
-		//Then we convert to Poirson&Wandell opponent and apply the filters for S-CIELAB, then convert to CIELAB
+
+		//We apply the S-cielab transformation to the original image
 		float[] ImageLAB = imageProcessing.XYZtoScielab(inlineImageXYZ, Ofilters,absOfilters, w, illuminant);
 
-		//float[] inlineImage2 = new float[4*image[0].length];
-        /*for(int i=0; i<image[0].length; i++)
-        {
-            float[] XYZ =ScielabProcessor.sRGBtoXYZ(new float[]{image[0][i], image[1][i], image[2][i]});
-            int off = i<<2;
-            inlineImage2[off] = XYZ[0];
-            inlineImage2[off+1] = XYZ[1];
-            inlineImage2[off+2] = XYZ[2];
-            inlineImage2[off+3] = 0.0f;
-        }*/
-
-        /*for(int i=0; i<inlineImageXYZ.length/4;i++)
-        {
-            int off = i <<2;
-            result[0][i] = inlineImageXYZ[off];
-            result[1][i] = inlineImageXYZ[off+1];
-            result[2][i] = inlineImageXYZ[off+2];
-        }*/
-		/*
-		//First we convert to XYZ and then to Poirson&Wandell opponent
-
-		float[][] XYC = new float[result[0].length][3];
-		long time = System.currentTimeMillis();
-		for(int i=0; i<XYC.length;i++)
-		{
-			XYC[i][0]=image[0][i];
-			XYC[i][1]=image[1][i];
-			XYC[i][2]=image[2][i];
-		}
-
-		Arrays.parallelSetAll(XYC, i->sRGBtoOpp(XYC[i]));
-
-		//-> Converting back to [C][XY]
-		/*for(int i=0; i<XYC.length;i++)
-		{
-			result[0][i]=XYC[i][0];
-			result[1][i]=XYC[i][1];
-			result[2][i]=XYC[i][2];
-		}*/
-		/*
-		float[] resultInline = new float[XYC.length*4]; //La specification OpenCL impose un alignement de 4*sizeof(float)
-		int off;
-		for(int i=0; i< XYC.length; i++)
-        {
-            off = i*3;
-            resultInline[off]=XYC[i][0];
-            resultInline[off+1]=XYC[i][1];
-            resultInline[off+2]=XYC[i][2];
-            resultInline[off+3]=0.0f;
-        }*/
-
-		//HybridQuantization.perfTime = HybridQuantization.addPerfLabel(time, "RGB2Opp");
-
-		/*for(int x=0; x<h; x++)
-		{
-			for(int y=0; y<w; y++)
-			{
-				offset = x*w + y;
-				srcBufferPixel[0] = image[0][offset];
-				srcBufferPixel[1] = image[1][offset];
-				srcBufferPixel[2] = image[2][offset];
-				outBufferPixel = XYZtoOpp(sRGBtoXYZ(srcBufferPixel));
-				result[0][offset] = outBufferPixel[0];
-				result[1][offset] = outBufferPixel[1];
-				result[2][offset] = outBufferPixel[2];
-			}
-		}*/
-		/*
-		long start = System.currentTimeMillis();
-		//Then we apply filters to mimic human vision
-		imageProcessing.convolve(resultInline, Ofilters, w);
-		HybridQuantization.perfTime = HybridQuantization.addPerfLabel(start, "Convolution");
-
-		for(int i=0; i<XYC.length;i++)
-		{
-			XYC[i][0]=result[0][i];
-			XYC[i][1]=result[1][i];
-			XYC[i][2]=result[2][i];
-		}
-
-		//Switch back to XYZ and then to LAB
-		Arrays.parallelSetAll(XYC, i->OpptosLab(XYC[i]));
-
-		//-> Converting back to [C][XY]
-		for(int i=0; i<XYC.length;i++)
-		{
-			result[0][i]=XYC[i][0];
-			result[1][i]=XYC[i][1];
-			result[2][i]=XYC[i][2];
-		}
-		//HybridQuantization.perfTime = HybridQuantization.addPerfLabel(HybridQuantization.perfTime, "Opp2LAB");
-
-		/*for(int x=0; x<h; x++)
-		{
-			for(int y=0; y<w; y++)
-			{
-				offset = x*w + y;
-				srcBufferPixel[0] = result[0][offset];
-				srcBufferPixel[1] = result[1][offset];
-				srcBufferPixel[2] = result[2][offset];
-				outBufferPixel = XYZtoLAB(OppToXYZ(srcBufferPixel));
-				result[0][offset] = outBufferPixel[0];
-				result[1][offset] = outBufferPixel[1];
-				result[2][offset] = outBufferPixel[2];
-			}
-		}*/
+		//For now, returns the RGB view of the transformed image, will be changed because it's 	ONLY FOR TESTING PURPOSES
 		return inlineLabToRGB(ImageLAB);
 	}
 
@@ -530,7 +427,7 @@ public class ScielabProcessor {
 		{
 			int off = i << 2;
 			outBufferPixel = Arrays.copyOfRange(lab, off, off+4);
-			outBufferPixel = XYZtoLAB(sRGBtoXYZ(outBufferPixel));
+			outBufferPixel = XYZtosRGB(LABtoXYZ(outBufferPixel));
 			result[0][i] = outBufferPixel[0];
 			result[1][i] = outBufferPixel[1];
 			result[2][i] = outBufferPixel[2];
@@ -548,13 +445,31 @@ public class ScielabProcessor {
 			srcBufferPixel[0] = image[0][i];
 			srcBufferPixel[1] = image[1][i];
 			srcBufferPixel[2] = image[2][i];
-			outBufferPixel = XYZtoLAB(sRGBtoXYZ(srcBufferPixel));
+			outBufferPixel = OpptoLab(sRGBtoOpp(srcBufferPixel));
 			result[0][i] = outBufferPixel[0];
 			result[1][i] = outBufferPixel[1];
 			result[2][i] = outBufferPixel[2];
 		}
 		return result;
 	}
+
+	/*public float[][] inlineXYZtoLAB(float[][] image)
+	{
+		float[][] result = new float[3][image[0].length];
+		float[] srcBufferPixel = new float[3];
+		float[] outBufferPixel;
+		for(int i=0; i < image[0].length; i++)
+		{
+			srcBufferPixel[0] = image[0][i];
+			srcBufferPixel[1] = image[1][i];
+			srcBufferPixel[2] = image[2][i];
+			outBufferPixel = XYZtoLAB(sRGBtoXYZ(srcBufferPixel));
+			result[0][i] = outBufferPixel[0];
+			result[1][i] = outBufferPixel[1];
+			result[2][i] = outBufferPixel[2];
+		}
+		return result;
+	}*/
 
 	public void close()
 	{

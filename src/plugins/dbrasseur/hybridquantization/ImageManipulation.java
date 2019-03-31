@@ -407,9 +407,9 @@ public class ImageManipulation {
             XYZ2OppKernel.setArgs(cl_inBuffer, cl_OppBuffer);
             event = XYZ2OppKernel.enqueueNDRange(queue, size,event);
 
-            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0].length/2, w, h, 0, cl_tempBuffer);
+            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0][0].length/2, w, h, 0, cl_tempBuffer);
             event = convolution4Kernel.enqueueNDRange(queue, size, event);
-            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0].length/2, h, w, 0, cl_convBuffer);
+            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0][0].length/2, h, w, 0, cl_convBuffer);
             event = convolution4Kernel.enqueueNDRange(queue, size, event);
 
             //Deuxieme filtre
@@ -423,9 +423,9 @@ public class ImageManipulation {
             absBuffer.rewind();
             event = cl_absBuffer.unmap(queue, absBuffer);
 
-            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0].length/2, w, h, 0, cl_tempBuffer);
+            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0][0].length/2, w, h, 0, cl_tempBuffer);
             event = convolution4Kernel.enqueueNDRange(queue, size, event);
-            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0].length/2, h, w, 1, cl_convBuffer);
+            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0][0].length/2, h, w, 1, cl_convBuffer);
             event = convolution4Kernel.enqueueNDRange(queue, size, event);
 
             //Troisieme filtre
@@ -439,10 +439,10 @@ public class ImageManipulation {
             absBuffer.rewind();
             event = cl_absBuffer.unmap(queue, absBuffer);
 
-            convolution1Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0].length/2, w, h, 0, cl_tempBuffer);
-            event = convolution1Kernel.enqueueNDRange(queue, size, event);
-            convolution1Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0].length/2, h, w, 1, cl_convBuffer);
-            event = convolution1Kernel.enqueueNDRange(queue, size, event);
+            convolution4Kernel.setArgs(cl_OppBuffer, cl_filterBuffer, filters[0][0].length/2, w, h, 0, cl_tempBuffer);
+            event = convolution4Kernel.enqueueNDRange(queue, size, event);
+            convolution4Kernel.setArgs(cl_tempBuffer, cl_absBuffer, absfilters[0][0].length/2, h, w, 1, cl_convBuffer);
+            event = convolution4Kernel.enqueueNDRange(queue, size, event);
 
             //Buffers on host
             FloatBuffer labBuffer = ByteBuffer.allocateDirect(XYZ.length*4).order(context.getByteOrder()).asFloatBuffer();
@@ -450,9 +450,9 @@ public class ImageManipulation {
 
             Opp2LABKernel.setArgs(cl_convBuffer, illuminant[0], illuminant[1], illuminant[2], cl_labBuffer);
             event = Opp2LABKernel.enqueueNDRange(queue, size, event);
-
-            cl_labBuffer.read(queue,labBuffer, true, event);
             queue.finish();
+            cl_labBuffer.read(queue,labBuffer, true, event);
+
 
             labBuffer.get(lab);
 
