@@ -209,9 +209,9 @@ public class ScielabProcessor {
 		{
 			for(int j=-offset; j <= offset;j++)
 			{
-				if(!(i-j < 0 || i+j >= data.length))
+				if(!(i+j < 0 || i+j >= data.length))
 				{
-					result[i]+=filter[j+offset]*data[i];
+					result[i]+=filter[j+offset]*data[i+j];
 				}
 			}
 		}
