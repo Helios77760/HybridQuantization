@@ -32,14 +32,13 @@ public class ScielabProcessor {
 	};
 	public static final float[][] mXYZtoOpp = {
 			{0.2787336f, 0.7218031f, -0.1065520f},
-			{-0.4487736f,0.2898056f,0.0771569f},
+			{-0.4487736f,0.2898056f,-0.0771569f},
 			{0.0859513f,-0.5899859f,0.5011089f}
 	};
 	public static final float[][] mOpptoXYZ = {
-			/*{0.97959616044562807864f, -1.5347157012664408981f, 0.44459764330437399288f},
-			{1.188977906742323787f, 0.7643549575179937615f, 0.13512574791125839373f},
-			{1.2318333139247290457f, 1.1631592597636512884f, 2.0784075888008567862f}*/
-			{0.624045f, -1.87044f, -0.155304f}, {1.36606f, 0.931563f, 0.433903f}, {1.5013f, 1.41761f, 2.53307f}
+			{0.624045f, -1.87044f, -0.155304f},
+            {1.36606f, 0.931563f, 0.433903f},
+            {1.5013f, 1.41761f, 2.53307f}
 	};
 	private static final float[][] weigths={
 			{1.00327f,0.114416f, -0.117686f},
@@ -52,13 +51,9 @@ public class ScielabProcessor {
 			{0.0920f,0.6451f}
 	};
 	private float[][][] Ofilters;
-	private float[][][] absOfilters;
+	private float[] absOfilters;
 	private float[] illuminant;
 	private ImageManipulation imageProcessing;
-
-	private float[][] float4filters;
-	private float[][] absFloat4filters;
-	private boolean openCLfiltersPrepared;
 
 	private static final float LABDELTA = 6.0f/29.0f;
 	private static final float LABDELTA2 = LABDELTA*LABDELTA;
@@ -172,30 +167,13 @@ public class ScielabProcessor {
 			Ofilters[2][0] = extractWithIndices(ups[2][0], downs);
 			Ofilters[2][1] = extractWithIndices(ups[2][1], downs);
 		}
-		absOfilters = new float[3][][];
-		absOfilters[0]= new float[3][];
-		absOfilters[0][0] = new float[Ofilters[0][0].length];
-		absOfilters[0][1] = new float[Ofilters[0][1].length];
-		absOfilters[0][2] = new float[Ofilters[0][2].length];
-		absOfilters[1]= new float[2][];
-		absOfilters[1][0] = new float[Ofilters[1][0].length];
-		absOfilters[1][1] = new float[Ofilters[1][1].length];
-		absOfilters[2]= new float[2][];
-		absOfilters[2][0] = new float[Ofilters[2][0].length];
-		absOfilters[2][1] = new float[Ofilters[2][1].length];
-		for(int i=0; i<absOfilters.length; i++)
-		{
-			for(int j=0; j<absOfilters[i].length;j++)
-			{
-				for(int k=0; k<absOfilters[i][j].length; k++)
-				{
-					float val = Ofilters[i][j][k];
-					absOfilters[i][j][k] = val < 0.0f ? -val : val;
-				}
-			}
-		}
+		absOfilters = new float[Ofilters[0][2].length];
+		for(int i=0; i<Ofilters[0][2].length;i++)
+        {
+            absOfilters[i] = Ofilters[0][2][i] * (Ofilters[0][2][i] < 0 ? -1 : 1);
+        }
 		imageProcessing = new ImageManipulation();
-		openCLfiltersPrepared =false;
+		imageProcessing.updateOpenCLFilters(Ofilters, absOfilters);
 	}
 
 
@@ -389,16 +367,13 @@ public class ScielabProcessor {
 	 * @param w width of the image in pixels
 	 * @return Lab image in an [C][XY] array in its S-CIELAB representation
 	 */
-	public float[][] imageToScielab(float[][] image, int w)
+	public float[] imageToScielab(float[][] image, int w)
 	{
 		//First we convert the RGBImage to XYZ
 		float[] inlineImageXYZ = imageProcessing.RGBtoXYZ(image[0], image[1], image[2]);
 
 		//We apply the S-cielab transformation to the original image
-		float[] ImageLAB = imageProcessing.XYZtoScielab(inlineImageXYZ, Ofilters,absOfilters, w, illuminant);
-
-		//For now, returns the RGB view of the transformed image, will be changed because it's 	ONLY FOR TESTING PURPOSES
-		return inlineLabToRGB(ImageLAB);
+        return imageProcessing.XYZtoScielab(inlineImageXYZ, Ofilters,absOfilters, w, illuminant);
 	}
 
 	public float[][] LabTosRGB(float[][] image)
@@ -452,24 +427,6 @@ public class ScielabProcessor {
 		}
 		return result;
 	}
-
-	/*public float[][] inlineXYZtoLAB(float[][] image)
-	{
-		float[][] result = new float[3][image[0].length];
-		float[] srcBufferPixel = new float[3];
-		float[] outBufferPixel;
-		for(int i=0; i < image[0].length; i++)
-		{
-			srcBufferPixel[0] = image[0][i];
-			srcBufferPixel[1] = image[1][i];
-			srcBufferPixel[2] = image[2][i];
-			outBufferPixel = XYZtoLAB(sRGBtoXYZ(srcBufferPixel));
-			result[0][i] = outBufferPixel[0];
-			result[1][i] = outBufferPixel[1];
-			result[2][i] = outBufferPixel[2];
-		}
-		return result;
-	}*/
 
 	public void close()
 	{

@@ -1,17 +1,12 @@
 package plugins.dbrasseur.hybridquantization;
 
-import icy.gui.dialog.MessageDialog;
 import icy.image.IcyBufferedImage;
 import icy.image.IcyBufferedImageUtil;
-import icy.image.colorspace.IcyColorSpace;
-import icy.plugin.abstract_.PluginActionable;
 import icy.sequence.Sequence;
 import icy.type.DataType;
 import icy.type.collection.array.Array1DUtil;
 import icy.util.Random;
 import plugins.adufour.ezplug.*;
-
-import java.util.ArrayList;
 
 /**
  * Implementation of "HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL" by Schaefer and Nolle
@@ -59,26 +54,31 @@ public class HybridQuantization extends EzPlug {
 	}
 
 	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
-	    perfTime = System.currentTimeMillis();
-		IcyBufferedImage im = seq.getFirstImage();
+	    IcyBufferedImage im = IcyBufferedImageUtil.convertToType(seq.getFirstImage(), DataType.FLOAT,true);
+		perfTime = System.currentTimeMillis();
 		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
-        //perfTime = addPerfLabel(perfTime, "Init scielab");
-		float[][] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsFloat(), im.getSizeX());
+        perfTime = addPerfLabel(perfTime, "Init scielab");
+		float[] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsFloat(), im.getSizeX());
+        perfTime = addPerfLabel(perfTime, "S-CIELab on the original image");
 		// Test visuel
-		//scImg = scielabProcessor.LabTosRGB(scImg);
+		float[][] outImg = scielabProcessor.inlineLabToRGB(scImg);
 		Sequence seqOut = new Sequence();
 
 		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
+		imageOut.beginUpdate();
 		// Copie du tableau vers la sequence
-		imageOut.setDataXY(0, Array1DUtil.floatArrayToArray(scImg[0], imageOut.getDataXY(0)));
-		imageOut.setDataXY(1, Array1DUtil.floatArrayToArray(scImg[1], imageOut.getDataXY(1)));
-		imageOut.setDataXY(2, Array1DUtil.floatArrayToArray(scImg[2], imageOut.getDataXY(2)));
+		imageOut.setDataXY(0, Array1DUtil.floatArrayToArray(outImg[0], imageOut.getDataXY(0)));
+		imageOut.setDataXY(1, Array1DUtil.floatArrayToArray(outImg[1], imageOut.getDataXY(1)));
+		imageOut.setDataXY(2, Array1DUtil.floatArrayToArray(outImg[2], imageOut.getDataXY(2)));
+		imageOut.endUpdate();
 
 		seqOut.addImage(imageOut);
 		seqOut.setName("End");
 
 		// Affichage
 		addSequence(seqOut);
+        perfTime = addPerfLabel(perfTime, "Affichage");
+		scielabProcessor.close();
 	}
 
 
@@ -131,8 +131,6 @@ public class HybridQuantization extends EzPlug {
 		super.addEzComponent(optimizationGroup);
 		super.addEzComponent(stepSizeGroup);
 		super.addEzComponent(scielabGroup);
-		perfLabels = new EzGroup("Perfs");
-		super.addEzComponent(perfLabels);
 
 		scielabGroup.setFoldedState(true);
 
@@ -179,7 +177,7 @@ public class HybridQuantization extends EzPlug {
 
 	public static long addPerfLabel(long start, String message)
     {
-        perfLabels.add(new EzLabel(message + ":"+ (System.currentTimeMillis()-start)));
+        System.out.println(message+ " : " + (System.currentTimeMillis()-start) + "ms");
         return System.currentTimeMillis();
     }
 	

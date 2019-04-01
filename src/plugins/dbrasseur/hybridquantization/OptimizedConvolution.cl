@@ -25,7 +25,7 @@ __kernel void convolve4Channels(    const __global float4* input,
         {
             off = (imageW << 1)-off-1;
         }
-        temp+=input[linestart+off]*k[kOff];
+        temp=fma(input[linestart+off],k[kOff],temp);
     }
     if(update == 1)
     {
@@ -40,7 +40,7 @@ __kernel void convolve4Channels(    const __global float4* input,
 }
 //Convolution of a specific channel horizontally for a separable convolution and output w/h flipping
 __kernel void convolve1Channel(    const __global float4* input,
-                                   __constant float* k,
+                                   __constant float4* k,
                                    int halfSize,
                                    int imageW,
                                    int imageH,
@@ -62,14 +62,14 @@ __kernel void convolve1Channel(    const __global float4* input,
             off = -off-1;
         if(off >= imageW)
             off = (imageW << 1)-off-1;
-        temp.x+=input[linestart+off].x*k[kOff++];
+        temp.x=fma(input[linestart+off].x,k[kOff++].x,temp.x);
     }
-    if(update == 0)
-    {
-        output[outPixel].x=temp.x;
-    }else
+    if(update == 1)
     {
         output[outPixel].x+=temp.x;
+    }else
+    {
+        output[outPixel].x=temp.x;
     }
 }
 

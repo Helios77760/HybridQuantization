@@ -5,6 +5,5 @@
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="var" path="ICY_HOME/plugins/adufour/ezplug/EzPlug.jar" sourcepath="/ICY_HOME/plugins/adufour/ezplug/EzPlug.jar"/>
 	<classpathentry kind="var" path="ICY_HOME/lib/javacl.jar"/>
-	<classpathentry kind="var" path="ICY_HOME/plugins/adufour/filtering/FilterToolbox.jar" sourcepath="/ICY_HOME/plugins/adufour/filtering/FilterToolbox.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
