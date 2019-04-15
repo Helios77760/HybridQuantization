@@ -4,6 +4,7 @@ import icy.type.collection.array.Array1DUtil;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.stream.IntStream;
 
 import static java.util.stream.Collectors.toList;
@@ -59,9 +60,12 @@ public class ScielabProcessor {
 	private static final float LABDELTA2 = LABDELTA*LABDELTA;
 	private static final float LABDELTA3= LABDELTA2*LABDELTA;
 
+	private HybridQuantization plugin;
 
-	public ScielabProcessor(int dpi, double viewingDistance, Whitepoint whitepoint)
+
+	public ScielabProcessor(int dpi, double viewingDistance, Whitepoint whitepoint, HybridQuantization HQ, ImageManipulation imageProcessor)
 	{
+		plugin = HQ;
 		//Set the whitepoint
 		if(whitepoint == Whitepoint.D50)
 		{
@@ -172,7 +176,7 @@ public class ScielabProcessor {
         {
             absOfilters[i] = Ofilters[0][2][i] * (Ofilters[0][2][i] < 0 ? -1 : 1);
         }
-		imageProcessing = new ImageManipulation();
+		this.imageProcessing = imageProcessor;
 		imageProcessing.updateOpenCLFilters(Ofilters, absOfilters);
 	}
 
@@ -365,15 +369,20 @@ public class ScielabProcessor {
 	 * Converts an sRBG image to its S-CIELAB representation
 	 * @param image sRGB image in an [C][XY] array
 	 * @param w width of the image in pixels
-	 * @return Lab image in an [C][XY] array in its S-CIELAB representation
+	 * @return Lab image in an [XYC] array in its S-CIELAB representation
 	 */
-	public float[] imageToScielab(float[][] image, int w)
+	public float[] sRGBToScielab(float[][] image, int w)
 	{
 		//First we convert the RGBImage to XYZ
 		float[] inlineImageXYZ = imageProcessing.RGBtoXYZ(image[0], image[1], image[2]);
 
 		//We apply the S-cielab transformation to the original image
         return imageProcessing.XYZtoScielab(inlineImageXYZ, Ofilters,absOfilters, w, illuminant);
+	}
+
+	public float[] bestColors(float[] inlineRGB, float[] inlineSCIELab, int w,int nbOfColors, SWASA simulatedAnnealing)
+	{
+		return imageProcessing.findBestQuantization(inlineRGB, inlineSCIELab, w, nbOfColors, simulatedAnnealing, Ofilters, absOfilters, illuminant);
 	}
 
 	public float[][] LabTosRGB(float[][] image)

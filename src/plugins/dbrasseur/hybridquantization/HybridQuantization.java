@@ -8,6 +8,8 @@ import icy.type.collection.array.Array1DUtil;
 import icy.util.Random;
 import plugins.adufour.ezplug.*;
 
+import java.util.Arrays;
+
 /**
  * Implementation of "HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL" by Schaefer and Nolle
  * @author Dylan Brasseur
@@ -26,20 +28,21 @@ public class HybridQuantization extends EzPlug {
 	//General optimization parameters
 	private EzVarInteger	EzpopulationSize;		//Population size (not supported yet)
 	private EzVarInteger	Ezimax;					//Max number of iterations
-	private EzVarDouble		Ezdelta;				//Penalty constant
+	private EzVarFloat		Ezdelta;				//Penalty constant
+	private EzVarEnum		EzDeltaE;				//DeltaE Type
 
 	//Temperature
-	private EzVarDouble		EzT0;					//Initial temperature
+	private EzVarFloat		EzT0;					//Initial temperature
 	private EzVarInteger	EziTc;					//Number of iterations per temperature
-	private EzVarDouble		Ezalpha;				//Cooling coefficient
+	private EzVarFloat		Ezalpha;				//Cooling coefficient
 	
 	//Step size parameters
-	private EzVarDouble		Ezs0;					//Initial Max Step Width
-	private EzVarDouble		Ezbeta;					//Adaptation constant
+	private EzVarFloat		Ezs0;					//Initial Max Step Width
+	private EzVarFloat		Ezbeta;					//Adaptation constant
 
 	//S-CIELAB Visual Settings
 	private EzVarInteger    Ezdpi;                  //Dots per inch of the monitor
-	private EzVarDouble     EzViewingDistance;      //Viewing distance in cm
+	private EzVarFloat      EzViewingDistance;      //Viewing distance in cm
 	private EzVarEnum       EzWhitePoint;           //Whitepoint
 	
 	
@@ -50,18 +53,26 @@ public class HybridQuantization extends EzPlug {
 
 	@Override
 	protected void execute() {
-		quantization(EzUniformization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
+		quantization(EzUniformization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(),(ImageManipulation.deltaETypes)EzDeltaE.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
 	}
 
-	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Double delta, Double T0, Integer iTc, Double alpha, Double s0, Double beta, Integer dpi, Double viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
+	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta, ImageManipulation.deltaETypes deltaEType, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
 	    IcyBufferedImage im = IcyBufferedImageUtil.convertToType(seq.getFirstImage(), DataType.FLOAT,true);
+	    ImageManipulation imageProcessor= new ImageManipulation(deltaEType);
+	    SWASA swasa = new SWASA(population, imax, iTc, delta, T0, alpha, s0, beta, this);
+		float[] inlineRGBImage = makeinline(im.getDataXYCAsFloat());
 		perfTime = System.currentTimeMillis();
-		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint);
+		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint, this, imageProcessor);
         perfTime = addPerfLabel(perfTime, "Init scielab");
-		float[] scImg = scielabProcessor.imageToScielab(im.getDataXYCAsFloat(), im.getSizeX());
+		float[] scImg = scielabProcessor.sRGBToScielab(im.getDataXYCAsFloat(), im.getSizeX());
         perfTime = addPerfLabel(perfTime, "S-CIELab on the original image");
-		// Test visuel
-		float[][] outImg = scielabProcessor.inlineLabToRGB(scImg);
+        float[] bestColors = scielabProcessor.bestColors(inlineRGBImage, scImg,im.getSizeX(),nbOfColors,swasa);
+        System.out.println(Arrays.toString(bestColors));
+        perfTime = addPerfLabel(perfTime, "Optimisation de la quantification");
+        float[] quantizedImage = imageProcessor.quantize(inlineRGBImage,bestColors);
+        perfTime = addPerfLabel(perfTime, "Quantification de l'image");
+        float[][] outImg = makeChannels(quantizedImage);
+
 		Sequence seqOut = new Sequence();
 
 		IcyBufferedImage imageOut =new IcyBufferedImage(im.getSizeX(), im.getSizeY(), im.getSizeC(), im.getDataType_());
@@ -84,6 +95,7 @@ public class HybridQuantization extends EzPlug {
 
 	@Override
 	protected void initialize() {
+
 		super.setTimeDisplay(true);
 		EzinputSeq = new EzVarSequence("Input");
 		EzinputSeq.setToolTipText("Images to be processed");
@@ -97,29 +109,30 @@ public class HybridQuantization extends EzPlug {
 		EzpopulationSize.setToolTipText("*CURRENTLY NOT SUPPORTED* Number of color palettes used to find the optimized palette. | Default : 10");
 		Ezimax = new EzVarInteger("Max iterations", 5000,1, Integer.MAX_VALUE,1);
 		Ezimax.setToolTipText("Maximum number of iterations. A higher value may result in a longer processing time. | Default : 5000");
-		Ezdelta = new EzVarDouble("Penalty Constant", 2, 0, Double.MAX_VALUE, 1);
+		Ezdelta = new EzVarFloat("Penalty Constant", 2, 0, Float.MAX_VALUE, 1);
 		Ezdelta.setToolTipText("Penalty constant for unused palette colors. | Default : 2");
+		EzDeltaE = new EzVarEnum<>("DeltaE type", ImageManipulation.deltaETypes.values(), ImageManipulation.deltaETypes.CIE76);
 
 		//Temperature
-		EzT0 = new EzVarDouble("Initial temperature", 20, 0, Double.MAX_VALUE, 1);
+		EzT0 = new EzVarFloat("Initial temperature", 20, 0, Float.MAX_VALUE, 1);
 		EzT0.setToolTipText("Initial temperature used in the simulated annealing process. | Default : 20");
 		EziTc = new EzVarInteger("Iterations per temperature",20, 1, Integer.MAX_VALUE, 1);
 		EziTc.setToolTipText("Number of iterations where the temperature is kept constant (iterations per step). Default : 20");
-		Ezalpha = new EzVarDouble("Cooling coefficient", 0.9, 0.0 ,1.0,0.1);
+		Ezalpha = new EzVarFloat("Cooling coefficient", 0.9f, 0.0f ,1.0f,0.1f);
 		Ezalpha.setToolTipText("Cooling coefficient by which the temperature is changed per step. | Default : 0.9 | Range : [0,1]");
 		EzGroup temperatureGroup = new EzGroup("Temperature",EzT0, EziTc, Ezalpha);
-		EzGroup optimizationGroup = new EzGroup("Optimization",EzpopulationSize, Ezimax, Ezdelta, temperatureGroup);
+		EzGroup optimizationGroup = new EzGroup("Optimization",EzpopulationSize, Ezimax, Ezdelta, EzDeltaE, temperatureGroup);
 
 		//Step size parameters
-		Ezs0 = new EzVarDouble("Initial Step size", 100, 1, Integer.MAX_VALUE, 1);
-		Ezbeta = new EzVarDouble("Adaptation constant", 5.3, 0,Double.MAX_VALUE, 0.5);
+		Ezs0 = new EzVarFloat("Initial Step size", 100, 1, 256, 1);
+		Ezbeta = new EzVarFloat("Adaptation constant", 5.3f, 0,Float.MAX_VALUE, 0.5f);
 		EzGroup stepSizeGroup = new EzGroup("Step size", Ezs0, Ezbeta);
 
 		//S-CIELAB Visual Settings
 		EzLabel EzscielabWarning = new EzLabel("Keep these parameters to default for computing purposes. \nFor visual purposes, use your screen's specifications");
 		Ezdpi = new EzVarInteger("Dpi", 72, 1, Integer.MAX_VALUE, 1);
 		Ezdpi.setToolTipText("Screen dpi | Default : 72");
-		EzViewingDistance = new EzVarDouble("Viewing distance", 45, 1, Double.MAX_VALUE, 1);
+		EzViewingDistance = new EzVarFloat("Viewing distance", 45, 1, Float.MAX_VALUE, 1);
 		EzViewingDistance.setToolTipText("Viewing distance from the screen in cm | Default : 45");
 		EzWhitePoint = new EzVarEnum<>("White point", ScielabProcessor.Whitepoint.values(),ScielabProcessor.Whitepoint.D65);
 		EzWhitePoint.setToolTipText("White point of the image | Default : D65");
@@ -139,46 +152,48 @@ public class HybridQuantization extends EzPlug {
 		EzUniformization.setEnabled(false);
 	}
 
-	private boolean isAccepted(double deltaE, double temperature)
-	{
-		return deltaE <= 0 || acceptanceProbability(deltaE, temperature) > Random.nextDouble();
-	}
-
-	private double acceptanceProbability(double deltaE, double temperature)
-	{
-		return Math.exp(-deltaE/temperature);
-	}
-
-	private double maxStepWidth(int i, double s0, double beta, int imax)
-	{
-		return 2*s0/(1+Math.exp(beta*i/imax));
-	}
-
-	private double deltaE(double[] p1, double[] p2)
-	{
-		double d0 = p1[0]-p2[0];
-		double d1 = p1[1]-p2[1];
-		double d2 = p1[2]-p2[2];
-		return Math.sqrt(d0*d0+d1*d1+d2*d2);
-	}
-
-	private double computeError_internal(double[][] O, double[][] Q, double penalty, int w, int h)
-	{
-		double error = 0;
-		for(int x=0; x < w;++x)
-		{
-			for(int y=0; y < h; ++y)
-			{
-				error += deltaE(O[x+y*w], Q[x+y*w]);
-			}
-		}
-		return error/(w*h*3) + penalty;
-	}
-
 	public static long addPerfLabel(long start, String message)
     {
         System.out.println(message+ " : " + (System.currentTimeMillis()-start) + "ms");
         return System.currentTimeMillis();
     }
-	
+
+    public void updateProgressBar(String message, float progress)
+	{
+		super.getUI().setProgressBarMessage(message);
+		super.getUI().setProgressBarValue(progress);
+		Thread.yield();
+	}
+
+	public float[] makeinline(float[][] image)
+	{
+		float[] inline = new float[image[0].length*4];
+		for(int i=0;i<image[0].length;i++)
+		{
+			int offset = i<<2;
+			inline[offset] = image[0][i];
+			inline[offset+1] = image[1][i];
+			inline[offset+2] = image[2][i];
+			inline[offset+3] = 0.0f;
+		}
+		return inline;
+	}
+
+	public float[][] makeChannels(float[] inline)
+	{
+		float[][] channels = new float[3][];
+		channels[0] = new float[inline.length/4];
+		channels[1] = new float[inline.length/4];
+		channels[2] = new float[inline.length/4];
+
+		for(int i=0; i<channels[0].length; i++)
+		{
+			int offset = i << 2;
+			channels[0][i] = inline[offset];
+			channels[1][i] = inline[offset+1];
+			channels[2][i] = inline[offset+2];
+		}
+
+		return channels;
+	}
 }

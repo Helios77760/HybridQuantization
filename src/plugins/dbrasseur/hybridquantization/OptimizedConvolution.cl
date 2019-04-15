@@ -138,3 +138,90 @@ __kernel void Opp2LAB(  __global float4* inputOpp,
     const float fz = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
     output[pixel] = (float4)(116.0f*fy-16.0f,500.0f*(fx-fy),200.0f*(fy-fz), 0.0f);
 }
+
+__kernel void quantize( const __global float4* input,
+                        const __global float4* colors,
+                        int numberOfColors,
+                        __global int* usedColors,
+                        __global float4* output)
+{
+    const int pixel = get_global_id(0);
+    float4 bestColor = colors[0];
+    float bestDistance = distance(input[pixel], bestColor);
+    float currentDistance=0;
+    int usedColorIndex=0;
+    for(int i=1; i<numberOfColors;i++)
+    {
+        currentDistance = distance(input[pixel], colors[i]);
+        if(currentDistance < bestDistance)
+        {
+            bestDistance = currentDistance;
+            bestColor = colors[i];
+            usedColorIndex=i;
+        }
+    }
+    output[pixel] = bestColor;
+    usedColors[usedColorIndex] = 1;
+}
+__constant float4 RGB2Oppm[3] = {(float4)(0.266413f, 0.603167f, 0.00113333f, 0.0f), (float4)(-0.124957f, 0.0375879f, -0.133381f, 0.0f), (float4)(-0.0803345f, -0.331467f, 0.449132f, 0.0f)};
+__kernel void quantizeAndConvertToOpp(  const __global float4* RGBinput,
+                                        const __global float4* colors,
+                                        int numberOfColors,
+                                        __global int* usedColors,
+                                        __global float4* output)
+{
+    const int pixel = get_global_id(0);
+    float4 bestColor = colors[0];
+    float bestDistance = distance(RGBinput[pixel], bestColor);
+    float currentDistance=0;
+    int usedColorIndex=0;
+    for(int i=1; i<numberOfColors;i++)
+    {
+        currentDistance = distance(RGBinput[pixel], colors[i]);
+        if(currentDistance < bestDistance)
+        {
+            bestDistance = currentDistance;
+            bestColor = colors[i];
+            usedColorIndex=i;
+        }
+    }
+    usedColors[usedColorIndex] = 1;
+    bestColor.x = (bestColor.x <= 0.04045f ? bestColor.x/12.92f : pow((bestColor.x+0.055f)/1.055f,2.4f));
+    bestColor.y = (bestColor.y <= 0.04045f ? bestColor.y/12.92f : pow((bestColor.y+0.055f)/1.055f,2.4f));
+    bestColor.z = (bestColor.z <= 0.04045f ? bestColor.z/12.92f : pow((bestColor.z+0.055f)/1.055f,2.4f));
+
+    output[pixel] = (float4)(dot(bestColor, RGB2Oppm[0]),dot(bestColor, RGB2Oppm[1]),dot(bestColor, RGB2Oppm[2]),0.0f);
+}
+
+__kernel void CIEDE(   const __global float4* original,
+                                    const __global float4* other,
+                                    __global float* output)
+{
+    const int pixel = get_global_id(0);
+    const float4 p1 = original[pixel];
+    const float4 p2 = other[pixel];
+    #ifdef CIE76
+        output[pixel] = distance(p1, p2);
+    #else
+        const float L1=p1.x;
+        const float L2=p2.x;
+        const float a1=p1.y;
+        const float a2=p2.y;
+        const float b1=p1.z;
+        const float b2=p2.z;
+    #if CIE94
+        const float deltaL = L1 - L2;
+        const float c1 = sqrt(fma(a1,a1,b1*b1));
+        const float deltaC = c1 - sqrt(fma(a2,a2,b2*b2));
+        const float deltaa = a1-a2;
+        const float deltab = b1-b2;
+        const float deltaH = sqrt(fma(deltaa, deltaa, deltab*deltab) - deltaC*deltaC);
+        const float sc = 1+0.045*c1;
+        const float sh = 1+0.015*c1;
+        output[pixel] = sqrt(fma(deltaL, deltaL, fma(deltaC/sc, deltaC/sc, (deltaH/sh)*(deltaH/sh))));
+    #else
+        //CIEDE2000
+
+    #endif
+    #endif
+}
