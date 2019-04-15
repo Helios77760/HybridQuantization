@@ -67,7 +67,6 @@ public class HybridQuantization extends EzPlug {
 		float[] scImg = scielabProcessor.sRGBToScielab(im.getDataXYCAsFloat(), im.getSizeX());
         perfTime = addPerfLabel(perfTime, "S-CIELab on the original image");
         float[] bestColors = scielabProcessor.bestColors(inlineRGBImage, scImg,im.getSizeX(),nbOfColors,swasa);
-        System.out.println(Arrays.toString(bestColors));
         perfTime = addPerfLabel(perfTime, "Optimisation de la quantification");
         float[] quantizedImage = imageProcessor.quantize(inlineRGBImage,bestColors);
         perfTime = addPerfLabel(perfTime, "Quantification de l'image");

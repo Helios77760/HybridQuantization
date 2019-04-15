@@ -578,7 +578,6 @@ public class ImageManipulation {
         float[] quantizedImage = new float[inlineImageRGB.length];
         if(openCLAvailable)
         {
-            System.out.println("q");
             CLEvent event;
             CLFloatBuffer cl_rgbBuffer = context.createFloatBuffer(CLMem.Usage.Input,inlineImageRGB.length);
             event = loadGPUBuffer(cl_rgbBuffer, inlineImageRGB);
