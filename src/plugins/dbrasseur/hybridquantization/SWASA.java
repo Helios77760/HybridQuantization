@@ -96,4 +96,9 @@ public class SWASA {
     {
         return value > min ? value > max ? max : value : min;
     }
+
+    public HybridQuantization getPlugin()
+    {
+        return plugin;
+    }
 }

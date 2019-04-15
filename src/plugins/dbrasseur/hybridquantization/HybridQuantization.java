@@ -13,12 +13,11 @@ import java.util.Arrays;
 /**
  * Implementation of "HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL" by Schaefer and Nolle
  * @author Dylan Brasseur
- * @version 0.1
+ * @version 1.0
  *
  */
-public class HybridQuantization extends EzPlug {
+public class HybridQuantization extends EzPlug implements EzStoppable{
 
-    public static EzGroup   perfLabels;
     public static long      perfTime;
 
 	private EzVarSequence	EzinputSeq;				//Image Sequence
@@ -44,6 +43,8 @@ public class HybridQuantization extends EzPlug {
 	private EzVarInteger    Ezdpi;                  //Dots per inch of the monitor
 	private EzVarFloat      EzViewingDistance;      //Viewing distance in cm
 	private EzVarEnum       EzWhitePoint;           //Whitepoint
+
+    private boolean         stopFlag=false;
 	
 	
 	@Override
@@ -53,19 +54,25 @@ public class HybridQuantization extends EzPlug {
 
 	@Override
 	protected void execute() {
+        stopFlag=false;
 		quantization(EzUniformization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(),(ImageManipulation.deltaETypes)EzDeltaE.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
 	}
 
 	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta, ImageManipulation.deltaETypes deltaEType, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
+	    long start = System.currentTimeMillis();
+	    setStageName("Initialisation...");
 	    IcyBufferedImage im = IcyBufferedImageUtil.convertToType(seq.getFirstImage(), DataType.FLOAT,true);
 	    ImageManipulation imageProcessor= new ImageManipulation(deltaEType);
 	    SWASA swasa = new SWASA(population, imax, iTc, delta, T0, alpha, s0, beta, this);
 		float[] inlineRGBImage = makeinline(im.getDataXYCAsFloat());
 		perfTime = System.currentTimeMillis();
+        setStageName("Initialisation de SCIELab...");
 		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint, this, imageProcessor);
         perfTime = addPerfLabel(perfTime, "Init scielab");
+        setStageName("SCIELab de l'image originale...");
 		float[] scImg = scielabProcessor.sRGBToScielab(im.getDataXYCAsFloat(), im.getSizeX());
         perfTime = addPerfLabel(perfTime, "S-CIELab on the original image");
+        setStageName("Optimisation...");
         float[] bestColors = scielabProcessor.bestColors(inlineRGBImage, scImg,im.getSizeX(),nbOfColors,swasa);
         perfTime = addPerfLabel(perfTime, "Optimisation de la quantification");
         float[] quantizedImage = imageProcessor.quantize(inlineRGBImage,bestColors);
@@ -83,7 +90,7 @@ public class HybridQuantization extends EzPlug {
 		imageOut.endUpdate();
 
 		seqOut.addImage(imageOut);
-		seqOut.setName("End");
+		seqOut.setName("Resultat("+(System.currentTimeMillis()-start)+"ms)");
 
 		// Affichage
 		addSequence(seqOut);
@@ -157,12 +164,19 @@ public class HybridQuantization extends EzPlug {
         return System.currentTimeMillis();
     }
 
-    public void updateProgressBar(String message, float progress)
+    public void updateProgressBar(String message, double progress)
 	{
 		super.getUI().setProgressBarMessage(message);
 		super.getUI().setProgressBarValue(progress);
 		Thread.yield();
 	}
+
+	public void setStageName(String name)
+    {
+        super.getStatus().setCompletion(Double.NaN);
+        super.getStatus().setMessage(name);
+        Thread.yield();
+    }
 
 	public float[] makeinline(float[][] image)
 	{
@@ -195,4 +209,14 @@ public class HybridQuantization extends EzPlug {
 
 		return channels;
 	}
+
+    @Override
+    public void stopExecution() {
+	    updateProgressBar("Stopping...", 1.0);
+        stopFlag=true;
+    }
+
+    public boolean isStopFlag() {
+        return stopFlag;
+    }
 }

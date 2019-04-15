@@ -157,9 +157,6 @@ public class ImageManipulation {
             inBuffer.rewind();
             event = cl_inBuffer.unmap(queue, inBuffer);
 
-            /*FloatBuffer outBuffer = ByteBuffer.allocateDirect(4*XYZ.length).order(context.getByteOrder()).asFloatBuffer();
-            CLFloatBuffer cl_outBuffer = context.createFloatBuffer(CLMem.Usage.Output, outBuffer, false);*/
-
 
             XYZ2RGBKernel.setArgs(cl_inBuffer, cl_Rbuffer, cl_Gbuffer, cl_Bbuffer);
             event = XYZ2RGBKernel.enqueueNDRange(queue, new int[]{XYZ.length/4}, event);
@@ -290,13 +287,10 @@ public class ImageManipulation {
             event = loadGPUBuffer(cl_inBuffer, XYZ);
 
             //Buffers on GPU
-            //FloatBuffer oppBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
             CLFloatBuffer cl_OppBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
 
-            //FloatBuffer convBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
             CLFloatBuffer cl_convBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
 
-            //FloatBuffer tempBuffer = ByteBuffer.allocateDirect(XYZ.length).order(context.getByteOrder()).asFloatBuffer();
             CLFloatBuffer cl_tempBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, XYZ.length);
 
             CLFloatBuffer cl_filterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filterLength);
@@ -440,6 +434,7 @@ public class ImageManipulation {
             bestError = currentError = computeQuantizationError(cl_comparisonBuffer, cl_rgbBuffer, cl_colorBuffer,cl_filterBuffer, cl_filterBuffer2, cl_filterBuffer3, cl_absfilterBuffer, cl_OppBuffer, cl_tempBuffer, cl_convBuffer, cl_usedColorBuffer, usedColorBuffer,usedColors, cl_errorBuffer, errorBuffer, errorArray, w, h, workSize, filterHalfWidth, simulatedAnnealing);
 
             //MAIN LOOP
+            long start = System.currentTimeMillis();
             int maxiter = simulatedAnnealing.getImax();
             for(int i=1; i<=maxiter;i++)
             {
@@ -461,9 +456,16 @@ public class ImageManipulation {
                         bestError = currentError;
                     }
                 }
-                if(i % 50 == 0)
+                if(simulatedAnnealing.getPlugin().isStopFlag())
                 {
-                    System.out.println(i + " error : " + bestError);
+                    break;
+                }
+                if(i % 10 == 0)
+                {
+                    long elapsed = System.currentTimeMillis();
+                    long restant=(long)((((elapsed-start)*1.0)/i)*(maxiter-i));
+                    String tpsRestant = (restant/60000 > 0 ? restant/60000 + "m" : "") + ((restant%60000)/1000 + "s") + " restant";
+                    simulatedAnnealing.getPlugin().updateProgressBar(i+"/"+maxiter + " : " + tpsRestant,(i*1.0)/maxiter);
                 }
             }
 
@@ -514,24 +516,13 @@ public class ImageManipulation {
         //Calcul de l'erreur
         event = DeltaEKernel.enqueueNDRange(queue, worksize, event);
         queue.finish();
-        event = errorBuffer.read(queue,errors, true, event);
+        errorBuffer.read(queue,errors, true, event);
         errors.rewind();
         errors.get(errorArray);
         usedColors.rewind();
         usedColors.get(usedColorsArray);
 
-        /*for(int i=0; i<usedColorsArray.length;i++)
-        {
-            System.out.print(usedColorsArray[i]+" ");
-        }
-        /*for(int i=0; i<errorArray.length;i++)
-        {
-            if(Double.isNaN(errorArray[i]))
-                System.out.print(errorArray[i]+" ");
-        }*/
-        double error = averageArray(errorArray)/3;
-        //System.out.println(error);
-        return error + swasa.computePenalty(usedColorsArray);
+        return averageArray(errorArray)/3 + swasa.computePenalty(usedColorsArray);
     }
 
     /**
