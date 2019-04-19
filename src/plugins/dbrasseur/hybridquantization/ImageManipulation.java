@@ -522,7 +522,7 @@ public class ImageManipulation {
                 {
                     break;
                 }
-                if(ite % 10 == 0)
+                if(populationSize >= 20 || ite % 20/populationSize == 0)
                 {
                     long elapsed = System.currentTimeMillis();
                     long restant=(long)((((elapsed-start)*1.0)/ite)*(maxiter-ite));
@@ -546,6 +546,7 @@ public class ImageManipulation {
             cl_temp1Buffer.release();
             cl_temp2Buffer.release();
             cl_temp3Buffer.release();
+            cl_labBuffer.release();
             for(CLIntBuffer b : cl_usedColorBuffers)
                 b.release();
         }
