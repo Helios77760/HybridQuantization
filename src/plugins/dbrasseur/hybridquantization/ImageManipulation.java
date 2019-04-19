@@ -32,8 +32,15 @@ public class ImageManipulation {
     private CLKernel Quantize2OppKernel;
     private CLKernel DeltaEKernel;
 
+    private CLKernel convolutionScielabTemp;
+    private CLKernel convolutionScielabEnd;
+
     private float[][] filters4;
     private float[] absfilters4;
+
+    private float[] filter3;
+    private float[] absfilter3;
+
     private boolean openCLFiltersReady;
 
     private boolean openCLAvailable;
@@ -58,6 +65,10 @@ public class ImageManipulation {
             QuantizeKernel = program.createKernel("quantize");
             Quantize2OppKernel = program.createKernel("quantizeAndConvertToOpp");
             DeltaEKernel = program.createKernel("CIEDE");
+
+            convolutionScielabTemp = program.createKernel("computeScielabKernelsTemp");
+            convolutionScielabEnd = program.createKernel("computeScielabKernelsEnd");
+
             openCLAvailable=true;
         }catch (IOException e)
         {
@@ -366,13 +377,17 @@ public class ImageManipulation {
     public float[] findBestQuantization(float[] inlinergbOriginal, float[] inlineScielabOriginal, int w,int nbOfColors, SWASA simulatedAnnealing, float[][][] filters, float[] absfilters, float[] illuminant)
     {
         simulatedAnnealing.reset();
-        float[] colors = simulatedAnnealing.generateRandomColors(nbOfColors);
-        float[] currentColors = new float[colors.length];
-        float[] bestColors = Arrays.copyOf(colors, colors.length);
+        //float[] colors = simulatedAnnealing.generateRandomColors(nbOfColors);
+        //float[] currentColors = new float[colors.length];
+
+        float[][] colors;
+        float[][] currentColors;
+
+        float[] bestColors = new float[nbOfColors*4];
         double bestError;
         int h = (inlinergbOriginal.length/4)/w;
-        float[] errorArray = new float[inlinergbOriginal.length/4];
-        int[] usedColors = new int[nbOfColors];
+        //float[] errorArray = new float[inlinergbOriginal.length/4];
+        //int[] usedColors = new int[nbOfColors];
         if(openCLAvailable)
         {
             CLEvent loadcomp, loadrgb, loadfilter1, loadfilter2, loadfilter3, loadabs, loadcolors;
@@ -386,86 +401,133 @@ public class ImageManipulation {
             int filterLength = filters4[0].length;
             int filterHalfWidth = filters4[0].length/8;
             double currentError, error;
+            int populationSize = simulatedAnnealing.getPopulationSize();
+            CLEvent[][] events = new CLEvent[populationSize][9];
+
+            colors = new float[populationSize][];
+            for(int i=0; i<populationSize; i++)
+            {
+                colors[i] = simulatedAnnealing.generateRandomColors(nbOfColors);
+            }
+            currentColors = new float[populationSize][colors[0].length];
+            bestColors = new float[colors[0].length];
+
+
 
             //BUFFER DECLARATION
+
+            //Utility buffer
+            int[] initialUsedColors = new int[nbOfColors];
+
+            IntBuffer[] usedColorBuffers = new IntBuffer[populationSize];
+            CLIntBuffer[] cl_usedColorBuffers = new CLIntBuffer[populationSize];
+            FloatBuffer[] errorBuffers = new FloatBuffer[populationSize];
+            CLFloatBuffer[] cl_errorBuffers = new CLFloatBuffer[populationSize];
+            int[][] usedColorsArray = new int[populationSize][];
+            float[][] errorArray = new float[populationSize][];
+            for(int i=0; i<populationSize; i++)
+            {
+                usedColorBuffers[i] = ByteBuffer.allocateDirect(nbOfColors*4).order(context.getByteOrder()).asIntBuffer();
+                cl_usedColorBuffers[i] = context.createIntBuffer(CLMem.Usage.Output, usedColorBuffers[i], false);
+                errorBuffers[i] = ByteBuffer.allocateDirect(inlineScielabOriginal.length*4).order(context.getByteOrder()).asFloatBuffer();
+                cl_errorBuffers[i] = context.createFloatBuffer(CLMem.Usage.Output, errorBuffers[i], false);
+                usedColorsArray[i] = new int[nbOfColors];
+                errorArray[i] = new float[inlinergbOriginal.length/4];
+            }
+
+            //IntBuffer usedColorBuffer = ByteBuffer.allocateDirect(nbOfColors*4).order(context.getByteOrder()).asIntBuffer();
+            //CLIntBuffer cl_usedColorBuffer = context.createIntBuffer(CLMem.Usage.Output, usedColorBuffer, false);
+            //FloatBuffer errorBuffer = ByteBuffer.allocateDirect(inlineScielabOriginal.length*4).order(context.getByteOrder()).asFloatBuffer();
+            //CLFloatBuffer cl_errorBuffer = context.createFloatBuffer(CLMem.Usage.Output, errorBuffer, false);
 
             //Input buffers
             CLFloatBuffer cl_comparisonBuffer = context.createFloatBuffer(CLMem.Usage.Input,inlineScielabOriginal.length);
             CLFloatBuffer cl_rgbBuffer = context.createFloatBuffer(CLMem.Usage.Input,inlinergbOriginal.length);
-            CLFloatBuffer cl_colorBuffer = context.createFloatBuffer(CLMem.Usage.Input, colors.length);
+            CLFloatBuffer cl_colorBuffer = context.createFloatBuffer(CLMem.Usage.Input, colors[0].length);
 
             //Filter buffers
             CLFloatBuffer cl_filterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filterLength);
             CLFloatBuffer cl_filterBuffer2 = context.createFloatBuffer(CLMem.Usage.Input,filterLength);
-            CLFloatBuffer cl_filterBuffer3 = context.createFloatBuffer(CLMem.Usage.Input,filterLength);
-            CLFloatBuffer cl_absfilterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filterLength);
+            CLFloatBuffer cl_filterBuffer3 = context.createFloatBuffer(CLMem.Usage.Input,filterLength/4);
+            CLFloatBuffer cl_absfilterBuffer = context.createFloatBuffer(CLMem.Usage.Input,filterLength/4);
 
             //Middle buffers
             CLFloatBuffer cl_OppBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length);
-            CLFloatBuffer cl_tempBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length);
+            CLFloatBuffer cl_temp1Buffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length);
+            CLFloatBuffer cl_temp2Buffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length);
+            CLFloatBuffer cl_temp3Buffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length/4);
             CLFloatBuffer cl_convBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length);
-
-            //Utility buffer
-            int[] initialUsedColors = new int[nbOfColors];
-            IntBuffer usedColorBuffer = ByteBuffer.allocateDirect(nbOfColors*4).order(context.getByteOrder()).asIntBuffer();
-            CLIntBuffer cl_usedColorBuffer = context.createIntBuffer(CLMem.Usage.Output, usedColorBuffer, false);
-            FloatBuffer errorBuffer = ByteBuffer.allocateDirect(inlineScielabOriginal.length*4).order(context.getByteOrder()).asFloatBuffer();
-            CLFloatBuffer cl_errorBuffer = context.createFloatBuffer(CLMem.Usage.Output, errorBuffer, false);
+            CLFloatBuffer cl_labBuffer = context.createFloatBuffer(CLMem.Usage.InputOutput, inlineScielabOriginal.length);
 
             //BUFFER LOADING
 
             //Input buffers
             loadcomp = loadGPUBuffer(cl_comparisonBuffer,inlineScielabOriginal);
             loadrgb = loadGPUBuffer(cl_rgbBuffer, inlinergbOriginal);
-            loadcolors = loadGPUBuffer(cl_colorBuffer, colors);
 
             //Filter buffers
             loadfilter1 = loadGPUBuffer(cl_filterBuffer, filters4[0]);
             loadfilter2 = loadGPUBuffer(cl_filterBuffer2, filters4[1]);
-            loadfilter3 = loadGPUBuffer(cl_filterBuffer3, filters4[2]);
-            loadabs = loadGPUBuffer(cl_absfilterBuffer, absfilters4);
+            loadfilter3 = loadGPUBuffer(cl_filterBuffer3, filter3);
+            loadabs = loadGPUBuffer(cl_absfilterBuffer, absfilter3);
 
             //ARGUMENTS DEFINITION FOR CONSTANT KERNELS
-            Quantize2OppKernel.setArgs(cl_rgbBuffer, cl_colorBuffer, nbOfColors, cl_usedColorBuffer, cl_OppBuffer);
-            DeltaEKernel.setArgs(cl_comparisonBuffer, cl_tempBuffer, cl_errorBuffer);
-            Opp2LABKernel.setArgs(cl_OppBuffer, illuminant[0], illuminant[1], illuminant[2], cl_tempBuffer);
+            Quantize2OppKernel.setArgs(cl_rgbBuffer, cl_colorBuffer, nbOfColors, cl_usedColorBuffers[0], cl_OppBuffer);
+            DeltaEKernel.setArgs(cl_comparisonBuffer, cl_labBuffer, cl_errorBuffers[0]);
+            Opp2LABKernel.setArgs(cl_convBuffer, illuminant[0], illuminant[1], illuminant[2], cl_labBuffer);
+            convolutionScielabTemp.setArgs(cl_OppBuffer,cl_filterBuffer,cl_filterBuffer2, cl_filterBuffer3,filterHalfWidth,w,h, cl_temp1Buffer,  cl_temp2Buffer, cl_temp3Buffer);
+            convolutionScielabEnd.setArgs(cl_temp1Buffer, cl_temp2Buffer, cl_temp3Buffer,cl_filterBuffer,cl_filterBuffer2, cl_filterBuffer3,filterHalfWidth,h,w, cl_convBuffer);
 
-            CLEvent.waitFor(loadcomp, loadrgb, loadcolors, loadfilter1, loadfilter2, loadfilter3, loadabs);
-            bestError = currentError = computeQuantizationError(cl_comparisonBuffer, cl_rgbBuffer, cl_colorBuffer,cl_filterBuffer, cl_filterBuffer2, cl_filterBuffer3, cl_absfilterBuffer, cl_OppBuffer, cl_tempBuffer, cl_convBuffer, cl_usedColorBuffer, usedColorBuffer,usedColors, cl_errorBuffer, errorBuffer, errorArray, w, h, workSize, filterHalfWidth, simulatedAnnealing);
+            CLEvent.waitFor(loadcomp, loadrgb, loadfilter1, loadfilter2, loadfilter3, loadabs);
 
+            //bestError = currentError = computeQuantizationError(cl_filterBuffer, cl_filterBuffer2, cl_filterBuffer3, cl_absfilterBuffer, cl_OppBuffer, cl_temp1Buffer,cl_temp2Buffer,cl_temp3Buffer, cl_convBuffer, cl_usedColorBuffer, usedColorBuffer,usedColors, cl_errorBuffer, errorBuffer, errorArray, w, h, workSize, filterHalfWidth, simulatedAnnealing);
+            double[] currentErrors = computeQuantizationErrorPopulation(populationSize, initialUsedColors, cl_colorBuffer,colors, cl_usedColorBuffers, usedColorBuffers,usedColorsArray,cl_errorBuffers,errorBuffers,errorArray,workSize, simulatedAnnealing, events );
+            int min = argmin(currentErrors);
+            bestError = currentErrors[min];
+            System.arraycopy(colors[min], 0, bestColors, 0,bestColors.length);
             //MAIN LOOP
             long start = System.currentTimeMillis();
             int maxiter = simulatedAnnealing.getImax();
-            for(int i=1; i<=maxiter;i++)
+            for(int ite=1; ite<=maxiter;ite++)
             {
-                usedColorBuffer.rewind();
-                usedColorBuffer.put(initialUsedColors);
-                usedColorBuffer.rewind();
-                CLEvent event = cl_usedColorBuffer.write(queue,usedColorBuffer, false);
-                simulatedAnnealing.reduceTemperatureIfNecessary(i);
-                simulatedAnnealing.generateNeighboringColors(colors, currentColors,nbOfColors, i);
-                loadGPUBuffer(cl_colorBuffer, currentColors, event).waitFor();
-                error = computeQuantizationError(cl_comparisonBuffer, cl_rgbBuffer, cl_colorBuffer,cl_filterBuffer, cl_filterBuffer2, cl_filterBuffer3, cl_absfilterBuffer, cl_OppBuffer, cl_tempBuffer, cl_convBuffer, cl_usedColorBuffer, usedColorBuffer,usedColors, cl_errorBuffer, errorBuffer, errorArray, w, h, workSize, filterHalfWidth, simulatedAnnealing);
-                if(simulatedAnnealing.isAccepted(error-currentError))
+                //usedColorBuffer.rewind();
+                //usedColorBuffer.put(initialUsedColors);
+                //usedColorBuffer.rewind();
+                //CLEvent event = cl_usedColorBuffer.write(queue,usedColorBuffer, false);
+                simulatedAnnealing.reduceTemperatureIfNecessary(ite);
+                for(int j=0; j<populationSize; j++)
                 {
-                    currentError = error;
-                    System.arraycopy(currentColors, 0, colors,0, currentColors.length);
-                    if(currentError < bestError)
+                    simulatedAnnealing.generateNeighboringColors(colors[j], currentColors[j],nbOfColors, ite);
+                }
+
+                //loadGPUBuffer(cl_colorBuffer, currentColors, event).waitFor();
+                //error = computeQuantizationError(cl_filterBuffer, cl_filterBuffer2, cl_filterBuffer3, cl_absfilterBuffer, cl_OppBuffer, cl_temp1Buffer,cl_temp2Buffer,cl_temp3Buffer, cl_convBuffer, cl_usedColorBuffer, usedColorBuffer,usedColors, cl_errorBuffer, errorBuffer, errorArray, w, h, workSize, filterHalfWidth, simulatedAnnealing);
+                double[] errors = computeQuantizationErrorPopulation(populationSize, initialUsedColors, cl_colorBuffer,currentColors, cl_usedColorBuffers, usedColorBuffers,usedColorsArray,cl_errorBuffers,errorBuffers,errorArray,workSize, simulatedAnnealing, events );
+                for(int i=0; i<populationSize; i++)
+                {
+                    if(simulatedAnnealing.isAccepted(errors[i]-currentErrors[i]))
                     {
-                        System.arraycopy(currentColors, 0, bestColors, 0, currentColors.length);
-                        bestError = currentError;
+                        currentErrors[i] = errors[i];
+                        System.arraycopy(currentColors[i], 0, colors[i],0, currentColors[i].length);
+                        if(currentErrors[i] < bestError)
+                        {
+                            bestError = currentErrors[i];
+                            System.arraycopy(currentColors[i], 0, bestColors,0, currentColors[i].length);
+                            System.out.println("Best Error :" + bestError);
+                        }
                     }
                 }
+
                 if(simulatedAnnealing.getPlugin().isStopFlag())
                 {
                     break;
                 }
-                if(i % 10 == 0)
+                if(ite % 10 == 0)
                 {
                     long elapsed = System.currentTimeMillis();
-                    long restant=(long)((((elapsed-start)*1.0)/i)*(maxiter-i));
+                    long restant=(long)((((elapsed-start)*1.0)/ite)*(maxiter-ite));
                     String tpsRestant = (restant/60000 > 0 ? restant/60000 + "m" : "") + ((restant%60000)/1000 + "s") + " restant";
-                    simulatedAnnealing.getPlugin().updateProgressBar(i+"/"+maxiter + " : " + tpsRestant,(i*1.0)/maxiter);
+                    simulatedAnnealing.getPlugin().updateProgressBar(ite+"/"+maxiter + " : " + tpsRestant,(ite*1.0)/maxiter);
                 }
             }
 
@@ -474,41 +536,33 @@ public class ImageManipulation {
             cl_colorBuffer.release();
             cl_comparisonBuffer.release();
             cl_convBuffer.release();
-            cl_errorBuffer.release();
+            for(CLFloatBuffer b : cl_errorBuffers)
+                b.release();
             cl_filterBuffer.release();
             cl_filterBuffer2.release();
             cl_filterBuffer3.release();
             cl_OppBuffer.release();
             cl_rgbBuffer.release();
-            cl_tempBuffer.release();
-            cl_usedColorBuffer.release();
+            cl_temp1Buffer.release();
+            cl_temp2Buffer.release();
+            cl_temp3Buffer.release();
+            for(CLIntBuffer b : cl_usedColorBuffers)
+                b.release();
         }
         return bestColors;
     }
 
-    private double computeQuantizationError(CLFloatBuffer original, CLFloatBuffer rgb, CLFloatBuffer colors, CLFloatBuffer filter1, CLFloatBuffer filter2, CLFloatBuffer filter3, CLFloatBuffer absfilter, CLFloatBuffer opp, CLFloatBuffer temp, CLFloatBuffer conv, CLIntBuffer usedColorBuffer, IntBuffer usedColors,int[] usedColorsArray, CLFloatBuffer errorBuffer, FloatBuffer errors, float[] errorArray, int w, int h, int[] worksize, int filterHalfWidth, SWASA swasa) {
+    private double computeQuantizationError(CLFloatBuffer filter1, CLFloatBuffer filter2, CLFloatBuffer filter3, CLFloatBuffer absfilter, CLFloatBuffer opp, CLFloatBuffer temp1, CLFloatBuffer temp2, CLFloatBuffer temp3, CLFloatBuffer conv, CLIntBuffer usedColorBuffer, IntBuffer usedColors,int[] usedColorsArray, CLFloatBuffer errorBuffer, FloatBuffer errors, float[] errorArray, int w, int h, int[] worksize, int filterHalfWidth, SWASA swasa) {
         CLEvent event;
         //Quantification
         event = Quantize2OppKernel.enqueueNDRange(queue, worksize);
         usedColorBuffer.read(queue, usedColors, false, event);
 
-        //Premier filtre
-        convolution4Kernel.setArgs(opp, filter1, filterHalfWidth, w, h, 0, temp);
-        event = convolution4Kernel.enqueueNDRange(queue, worksize, event);
-        convolution4Kernel.setArgs(temp, filter1, filterHalfWidth, h, w, 0, conv);
-        event = convolution4Kernel.enqueueNDRange(queue, worksize, event);
+        //Convolution horizontale
+        event = convolutionScielabTemp.enqueueNDRange(queue, worksize, event);
 
-        //Deuxième filtre
-        convolution4Kernel.setArgs(opp, filter2, filterHalfWidth, w, h, 0, temp);
-        event = convolution4Kernel.enqueueNDRange(queue, worksize, event);
-        convolution4Kernel.setArgs(temp, filter2, filterHalfWidth, h, w, 1, conv);
-        event = convolution4Kernel.enqueueNDRange(queue, worksize, event);
-
-        //Troisieme filtre sur le premier canal
-        convolution1Kernel.setArgs(opp, filter3, filterHalfWidth, w, h, 0, temp);
-        event = convolution1Kernel.enqueueNDRange(queue, worksize, event);
-        convolution1Kernel.setArgs(temp, absfilter, filterHalfWidth, h, w, 1, conv);
-        event = convolution1Kernel.enqueueNDRange(queue, worksize, event);
+        //Convolution verticale
+        event = convolutionScielabEnd.enqueueNDRange(queue, worksize, event);
 
         //Conversion en lab
         event = Opp2LABKernel.enqueueNDRange(queue, worksize, event);
@@ -524,6 +578,117 @@ public class ImageManipulation {
 
         return averageArray(errorArray)/3 + swasa.computePenalty(usedColorsArray);
     }
+
+    private double[] computeQuantizationErrorPopulation(int populationSize, int[] cleanUsedColors, CLFloatBuffer cl_colors, float[][] colors, CLIntBuffer[] usedColorBuffer, IntBuffer[] usedColors,int[][] usedColorsArray, CLFloatBuffer[] errorBuffer, FloatBuffer[] errors, float[][] errorArray, int[] worksize, SWASA swasa, CLEvent[][] events) {
+        /* Le deuxieme indice des events est l'étape, entre parentheses est la dépendance de population et d'étape :
+            0 : Reinitialisation du buffer des couleurs utilisées (i-1, 3)
+            1 : Ecriture des couleurs (i-1, 2)
+            2 : Quantification (i, 0)(i, 1), (i-1 , 4)
+            3 : Lecture des couleurs utilisées (i, 2)
+            4 : Scielab horizontal (i, 2)(i-1, 5)
+            5 : Scielab vertical (i, 4)(i-1, 6)
+            6 : Conversion en lab (i, 5)(i-1, 7)
+            7 : Calcul de l'erreur (i, 6)
+            8 : Lecture de l'erreur (i, 7)
+         */
+        double[] results = new double[populationSize];
+        Thread[] threads = new Thread[populationSize];
+
+        for(int i=0; i<populationSize; i++)
+        {
+            if(i > 0)
+            {
+                //Reinitialisation du buffer
+                events[i][0] = usedColorBuffer[i].write(queue,usedColors[i], false, events[i-1][3]);
+
+                //Ecriture des couleurs dans le buffer
+                events[i][1] = loadGPUBuffer(cl_colors, colors[i], events[i-1][2]);
+
+                //Quantification
+                Quantize2OppKernel.setArg(3,usedColorBuffer[i]);
+                events[i][2] = Quantize2OppKernel.enqueueNDRange(queue, worksize, events[i-1][4], events[i][0], events[i][1]);
+
+                //Lecture des couleurs utilisées
+                events[i][3] = usedColorBuffer[i].read(queue, usedColors[i], false, events[i][2]);
+
+                //Scielab horizontal
+                events[i][4] = convolutionScielabTemp.enqueueNDRange(queue, worksize, events[i][2], events[i-1][5]);
+
+                //Scielab vertical
+                events[i][5] = convolutionScielabEnd.enqueueNDRange(queue, worksize, events[i][4], events[i-1][6]);
+
+                //Scielab horizontal
+                events[i][6] = Opp2LABKernel.enqueueNDRange(queue, worksize, events[i][5], events[i-1][7]);
+
+                //Calcul de l'erreur
+                DeltaEKernel.setArg(2, errorBuffer[i]);
+                events[i][7] = DeltaEKernel.enqueueNDRange(queue, worksize, events[i][6]);
+
+                //Lecture de l'erreur
+                errors[i].rewind();
+                events[i][8] = errorBuffer[i].read(queue,errors[i], false, events[i][7]);
+
+            }else
+            {
+                //Reinitialisation du buffer
+                events[i][0] = usedColorBuffer[i].write(queue,usedColors[i], false);
+
+                //Ecriture des couleurs dans le buffer
+                events[i][1] = loadGPUBuffer(cl_colors, colors[i]);
+
+                //Quantification
+                Quantize2OppKernel.setArg(3,usedColorBuffer[i]);
+                events[i][2] = Quantize2OppKernel.enqueueNDRange(queue, worksize, events[i][0], events[i][1]);
+
+                //Lecture des couleurs utilisées
+                events[i][3] = usedColorBuffer[i].read(queue, usedColors[i], false, events[i][2]);
+
+                //Scielab horizontal
+                events[i][4] = convolutionScielabTemp.enqueueNDRange(queue, worksize, events[i][2]);
+
+                //Scielab vertical
+                events[i][5] = convolutionScielabEnd.enqueueNDRange(queue, worksize, events[i][4]);
+
+                //Scielab horizontal
+                events[i][6] = Opp2LABKernel.enqueueNDRange(queue, worksize, events[i][5]);
+
+                //Calcul de l'erreur
+                DeltaEKernel.setArg(2, errorBuffer[i]);
+                events[i][7] = DeltaEKernel.enqueueNDRange(queue, worksize, events[i][6]);
+
+                //Lecture de l'erreur
+                events[i][8] = errorBuffer[i].read(queue,errors[i], false, events[i][7]);
+            }
+
+            int finalI = i;
+            threads[i] = new Thread(()->{
+                events[finalI][3].waitFor();
+                usedColors[finalI].rewind();
+                usedColors[finalI].get(usedColorsArray[finalI]).rewind();
+                usedColors[finalI].put(cleanUsedColors).rewind();
+
+                events[finalI][8].waitFor();
+                errors[finalI].rewind();
+                errors[finalI].get(errorArray[finalI]).rewind();
+
+                results[finalI] = averageArray(errorArray[finalI])/3 + swasa.computePenalty(usedColorsArray[finalI]);
+            });
+            threads[i].start();
+        }
+
+        queue.finish();
+        for(Thread t : threads)
+        {
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        return results;
+    }
+
+
 
     /**
      * Returns the average of the array
@@ -611,6 +776,7 @@ public class ImageManipulation {
             }
         }
         filters4[2] = new float[filters[0][2].length*4];
+        filter3 = new float[filters[0][2].length];
         for(int j=0; j < filters[0][2].length; j++)
         {
             off = j<<2;
@@ -618,8 +784,10 @@ public class ImageManipulation {
             filters4[2][off+1] = 0.0f;
             filters4[2][off+2] = 0.0f;
             filters4[2][off+3] = 0.0f;
+            filter3[j] = filters[0][2][j];
         }
 
+        absfilter3 = new float[absfilters.length];
         for(int j=0; j < absfilters.length; j++)
         {
             off = j<<2;
@@ -627,7 +795,25 @@ public class ImageManipulation {
             absfilters4[off+1] = 0.0f;
             absfilters4[off+2] = 0.0f;
             absfilters4[off+3] = 0.0f;
+            absfilter3[j] = absfilters[j];
         }
+
+
         openCLFiltersReady=true;
+    }
+
+    public static int argmin(double[] arr)
+    {
+        int min =0;
+        double score = arr[0];
+        for(int i=1; i<arr.length; i++)
+        {
+            if(score > arr[i])
+            {
+                min =i;
+                score = arr[i];
+            }
+        }
+        return min;
     }
 }

@@ -101,4 +101,8 @@ public class SWASA {
     {
         return plugin;
     }
+
+    public int getPopulationSize() {
+        return population;
+    }
 }

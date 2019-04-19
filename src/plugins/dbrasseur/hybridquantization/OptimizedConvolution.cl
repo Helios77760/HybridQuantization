@@ -225,3 +225,101 @@ __kernel void CIEDE(   const __global float4* original,
     #endif
     #endif
 }
+
+__kernel void computeScielabKernelsTemp(    const __global float4* input,
+                                        __constant float4* k1,
+                                        __constant float4* k2,
+                                        __constant float* k3,
+                                        int halfSize,
+                                        int imageW,
+                                        int imageH,
+                                        __global float4* output1,
+                                        __global float4* output2,
+                                        __global float* output3)
+{
+    const int pixel = get_global_id(0);
+    // pixel = i*w +j
+    const int j = pixel%imageW;
+    const int linestart = (pixel/imageW)*imageW;
+    const int outPixel = j*imageH + (pixel/imageW);
+    float4 temp1 = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    float4 temp2 = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    float temp3 = 0.0f;
+    int off;
+    for(int i=-halfSize, kOff=0; i <= halfSize; i++, kOff++)
+    {
+        off = j+i;
+        if(off < 0)
+        {
+            off = -off-1;
+        }else if(off >= imageW)
+        {
+            off = (imageW << 1)-off-1;
+        }
+        temp1=fma(input[linestart+off],k1[kOff],temp1);
+    }
+
+    output1[outPixel] = temp1;
+    for(int i=-halfSize, kOff=0; i <= halfSize; i++, kOff++)
+    {
+        off = j+i;
+        if(off < 0)
+        {
+            off = -off-1;
+        }else if(off >= imageW)
+        {
+            off = (imageW << 1)-off-1;
+        }
+        temp2=fma(input[linestart+off],k2[kOff],temp2);
+    }
+    output2[outPixel] = temp2;
+    for(int i=-halfSize, kOff=0; i <= halfSize; i++, kOff++)
+    {
+        off = j+i;
+        if(off < 0)
+        {
+            off = -off-1;
+        }else if(off >= imageW)
+        {
+            off = (imageW << 1)-off-1;
+        }
+        temp3=fma(input[linestart+off].x,k3[kOff],temp3);
+    }
+    output3[outPixel] = temp3;
+}
+
+__kernel void computeScielabKernelsEnd( const __global float4* input1,
+                                        const __global float4* input2,
+                                        const __global float* input3,
+                                        __constant float4* k1,
+                                        __constant float4* k2,
+                                        __constant float* k3,
+                                        int halfSize,
+                                        int imageW,
+                                        int imageH,
+                                        __global float4* output)
+{
+    const int pixel = get_global_id(0);
+    // pixel = i*w +j
+    const int j = pixel%imageW;
+    const int linestart = (pixel/imageW)*imageW;
+    const int outPixel = j*imageH + (pixel/imageW);
+    float4 out = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+    int off;
+    for(int i=-halfSize, kOff=0; i <= halfSize; i++, kOff++)
+    {
+        off = j+i;
+        if(off < 0)
+        {
+            off = -off-1;
+        }else if(off >= imageW)
+        {
+            off = (imageW << 1)-off-1;
+        }
+        out=fma(input1[linestart+off],k1[kOff],fma(input2[linestart+off],k2[kOff],out));
+        out.x = fma(input3[linestart+off], k3[kOff], out.x);
+    }
+    output[outPixel] = out;
+}
+
+

@@ -111,10 +111,10 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		EzUniformization.setToolTipText("*CURRENTLY NOT SUPPORTED* If checked, the output sequence will have fake colors to be uniform over all the sequence | Default : false");
 
 		//General optimization parameters
-		EzpopulationSize = new EzVarInteger("Population size", 1,1,Integer.MAX_VALUE,1);
-		EzpopulationSize.setToolTipText("*CURRENTLY NOT SUPPORTED* Number of color palettes used to find the optimized palette. | Default : 10");
+		EzpopulationSize = new EzVarInteger("Population size", 4,1,Integer.MAX_VALUE,1);
+		EzpopulationSize.setToolTipText("Number of color palettes used to find the optimized palette. Will linearly increase computation time| Default : 4");
 		Ezimax = new EzVarInteger("Max iterations", 5000,1, Integer.MAX_VALUE,1);
-		Ezimax.setToolTipText("Maximum number of iterations. A higher value may result in a longer processing time. | Default : 5000");
+		Ezimax.setToolTipText("Maximum number of iterations. Will linearly increase computation time| Default : 5000");
 		Ezdelta = new EzVarFloat("Penalty Constant", 2, 0, Float.MAX_VALUE, 1);
 		Ezdelta.setToolTipText("Penalty constant for unused palette colors. | Default : 2");
 		EzDeltaE = new EzVarEnum<>("DeltaE type", ImageManipulation.deltaETypes.values(), ImageManipulation.deltaETypes.CIE76);
@@ -154,7 +154,6 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		scielabGroup.setFoldedState(true);
 
 		//Unsupported parameters
-		EzpopulationSize.setEnabled(false);
 		EzUniformization.setEnabled(false);
 	}
 
