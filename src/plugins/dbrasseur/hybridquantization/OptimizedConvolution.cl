@@ -107,7 +107,7 @@ __kernel void XYZ2RGB(  __global float4* inputXYZ,
     Bout[pixel] = (B <= 0.0031308f ? B*12.92f : 1.055f*pow(B, inv)-0.055f);
 }
 
-__constant float4 XYZ2Oppm[3] = {(float4)(0.2787336f, 0.7218031f, -0.1065520f, 0.0f),(float4)(-0.4487736f,0.2898056f,-0.0771569f, 0.0f),(float4)(0.0859513f,-0.5899859f,0.5011089f, 0.0f)};
+__constant float4 XYZ2Oppm[3] = {(float4)(0.2787336f, 0.7218031f, -0.1065520f, 0.0f),(float4)(-0.4487736f,0.2898056f, -0.0771569f, 0.0f),(float4)(0.0859513f,-0.5899859f,0.5011089f, 0.0f)};
 __kernel void XYZ2Opp(  __global float4* inputXYZ,
                         __global float4* output)
 {
@@ -116,9 +116,11 @@ __kernel void XYZ2Opp(  __global float4* inputXYZ,
 }
 
 __constant float4 Opp2XYZm[3] = {(float4)(0.624045f, -1.87044f, -0.155304f, 0.0f),(float4)(1.36606f, 0.931563f, 0.433903f, 0.0f),(float4)(1.5013f, 1.41761f, 2.53307f, 0.0f)};
+//__constant float4 Opp2XYZm[3] = {(float4)(0.979596f, -1.5347f, 0.4445976f, 0.0f),(float4)(1.1889779f, 0.7643549f, 0.135125f, 0.0f),(float4)(1.231833f, 1.163159f, 2.078407f, 0.0f)};
 __constant float LABDELTA = 6.0f/29.0f;
 __constant float LABDELTA2 = 36.0f/841.0f;
 __constant float LABDELTA3= 216.0f/24389.0f;
+__constant float kappa= 24389.0f/27.0f;
 __kernel void Opp2LAB(  __global float4* inputOpp,
                         float illuminantX,
                         float illuminantY,
@@ -131,11 +133,14 @@ __kernel void Opp2LAB(  __global float4* inputOpp,
     const float Z = dot(inputOpp[pixel], Opp2XYZm[2]);
 
     float t = X/illuminantX;
-    const float fx = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    //const float fx = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    const float fx = (t > LABDELTA3) ? cbrt(t) : fma(kappa, t, 16.0f)/116.0f;
     t = Y/illuminantY;
-    const float fy = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    //const float fy = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    const float fy = (t > LABDELTA3) ? cbrt(t) : fma(kappa, t, 16.0f)/116.0f;
     t = Z/illuminantZ;
-    const float fz = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    //const float fz = (t > LABDELTA3) ? pow(t, 1.0f / 3.0f) : ((t / (3 * LABDELTA2)) + (4.0f / 29.0f));
+    const float fz = (t > LABDELTA3) ? cbrt(t) : fma(kappa, t, 16.0f)/116.0f;
     output[pixel] = (float4)(116.0f*fy-16.0f,500.0f*(fx-fy),200.0f*(fy-fz), 0.0f);
 }
 
@@ -201,7 +206,7 @@ __kernel void CIEDE(   const __global float4* original,
     const float4 p1 = original[pixel];
     const float4 p2 = other[pixel];
     #ifdef CIE76
-        output[pixel] = distance(p1, p2);
+        output[pixel] = distance(p1.xyz, p2.xyz);
     #else
         const float L1=p1.x;
         const float L2=p2.x;
@@ -257,34 +262,12 @@ __kernel void computeScielabKernelsTemp(    const __global float4* input,
             off = (imageW << 1)-off-1;
         }
         temp1=fma(input[linestart+off],k1[kOff],temp1);
+        temp2=fma(input[linestart+off],k2[kOff],temp2);
+        temp3=fma(input[linestart+off].x,k3[kOff],temp3);
     }
 
     output1[outPixel] = temp1;
-    for(int i=-halfSize, kOff=0; i <= halfSize; i++, kOff++)
-    {
-        off = j+i;
-        if(off < 0)
-        {
-            off = -off-1;
-        }else if(off >= imageW)
-        {
-            off = (imageW << 1)-off-1;
-        }
-        temp2=fma(input[linestart+off],k2[kOff],temp2);
-    }
     output2[outPixel] = temp2;
-    for(int i=-halfSize, kOff=0; i <= halfSize; i++, kOff++)
-    {
-        off = j+i;
-        if(off < 0)
-        {
-            off = -off-1;
-        }else if(off >= imageW)
-        {
-            off = (imageW << 1)-off-1;
-        }
-        temp3=fma(input[linestart+off].x,k3[kOff],temp3);
-    }
     output3[outPixel] = temp3;
 }
 

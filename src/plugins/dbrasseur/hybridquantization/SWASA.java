@@ -4,13 +4,14 @@ public class SWASA {
 
     private int population,imax,iTc;
     private float delta,t0,alpha,s0,beta;
+    private float convergenceDelay, convergenceRate;
 
     private float temperature;
     private float stepWidth;
 
     private HybridQuantization plugin;
 
-    public SWASA(int population, int imax, int iTc, float delta, float t0, float alpha, float s0, float beta, HybridQuantization HQ) {
+    public SWASA(int population, int imax, int iTc, float delta,float convDelay, float convSpread, float t0, float alpha, float s0, float beta, HybridQuantization HQ) {
         plugin = HQ;
         this.population = population;
         this.imax = imax;
@@ -20,6 +21,8 @@ public class SWASA {
         this.alpha = alpha;
         this.s0 = s0;
         this.beta = beta;
+        this.convergenceDelay = convDelay;
+        this.convergenceRate = convSpread;
 
         reset();
     }
@@ -53,12 +56,17 @@ public class SWASA {
         return deltaE <= 0 || acceptanceProbability(deltaE*256) > icy.util.Random.nextDouble();
     }
 
-    private double acceptanceProbability(double deltaE)
+    public boolean keepsHisValues(int iteration)
+    {
+        return -(Math.tanh((iteration-convergenceDelay*imax)/(convergenceRate*imax)))/2+0.5 > icy.util.Random.nextDouble();
+    }
+
+    public double acceptanceProbability(double deltaE)
     {
         return Math.exp(-deltaE/temperature);
     }
 
-    private float maxStepWidth(int i)
+    public float maxStepWidth(int i)
     {
         return (float)(2*s0/(1+Math.exp(beta*i/imax)));
     }

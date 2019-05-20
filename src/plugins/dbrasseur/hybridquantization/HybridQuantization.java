@@ -29,6 +29,8 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 	private EzVarInteger	Ezimax;					//Max number of iterations
 	private EzVarFloat		Ezdelta;				//Penalty constant
 	private EzVarEnum		EzDeltaE;				//DeltaE Type
+	private EzVarFloat		EzConvDelay;			//Convergence delay
+	private EzVarFloat		EzConvSpread;			//Convergence spread
 
 	//Temperature
 	private EzVarFloat		EzT0;					//Initial temperature
@@ -55,15 +57,15 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 	@Override
 	protected void execute() {
         stopFlag=false;
-		quantization(EzUniformization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(),(ImageManipulation.deltaETypes)EzDeltaE.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
+		quantization(false, EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzConvDelay.getValue(), EzConvSpread.getValue(),ImageManipulation.deltaETypes.CIE76, EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
 	}
 
-	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta, ImageManipulation.deltaETypes deltaEType, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
+	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta,Float convDelay, Float convSpread, ImageManipulation.deltaETypes deltaEType, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
 	    long start = System.currentTimeMillis();
 	    setStageName("Initialisation...");
 	    IcyBufferedImage im = IcyBufferedImageUtil.convertToType(seq.getFirstImage(), DataType.FLOAT,true);
 	    ImageManipulation imageProcessor= new ImageManipulation(deltaEType);
-	    SWASA swasa = new SWASA(population, imax, iTc, delta, T0, alpha, s0, beta, this);
+	    SWASA swasa = new SWASA(population, imax, iTc, delta, convDelay,convSpread,T0, alpha, s0, beta, this);
 		float[] inlineRGBImage = makeinline(im.getDataXYCAsFloat());
 		perfTime = System.currentTimeMillis();
         setStageName("Initialisation de SCIELab...");
@@ -107,8 +109,6 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		EzinputSeq.setToolTipText("Images to be processed");
 		EznbOfColors = new EzVarInteger("Number of colors",8,1,16777216,1);
 		EznbOfColors.setToolTipText("Target number of colors in the palette | Default : 8 | Range : [1, 2^24]");
-		EzUniformization = new EzVarBoolean("Fake palette", false);
-		EzUniformization.setToolTipText("*CURRENTLY NOT SUPPORTED* If checked, the output sequence will have fake colors to be uniform over all the sequence | Default : false");
 
 		//General optimization parameters
 		EzpopulationSize = new EzVarInteger("Population size", 4,1,Integer.MAX_VALUE,1);
@@ -117,7 +117,10 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		Ezimax.setToolTipText("Maximum number of iterations. Will linearly increase computation time| Default : 5000");
 		Ezdelta = new EzVarFloat("Penalty Constant", 2, 0, Float.MAX_VALUE, 1);
 		Ezdelta.setToolTipText("Penalty constant for unused palette colors. | Default : 2");
-		EzDeltaE = new EzVarEnum<>("DeltaE type", ImageManipulation.deltaETypes.values(), ImageManipulation.deltaETypes.CIE76);
+		EzConvDelay = new EzVarFloat("Convergence delay", 0.75f, 0.0f, 1.0f, 0.05f);
+		EzConvDelay.setToolTipText("Convergence delay of the population | Default : 0.75 | Range [0,1]");
+		EzConvSpread = new EzVarFloat("Convergence spread", 0.15f, 0.0f, 1.0f, 0.05f);
+		EzConvSpread.setToolTipText("Convergence spread of the population | Default : 0.15 | Range [0,1]");
 
 		//Temperature
 		EzT0 = new EzVarFloat("Initial temperature", 20, 0, Float.MAX_VALUE, 1);
@@ -127,7 +130,7 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		Ezalpha = new EzVarFloat("Cooling coefficient", 0.9f, 0.0f ,1.0f,0.1f);
 		Ezalpha.setToolTipText("Cooling coefficient by which the temperature is changed per step. | Default : 0.9 | Range : [0,1]");
 		EzGroup temperatureGroup = new EzGroup("Temperature",EzT0, EziTc, Ezalpha);
-		EzGroup optimizationGroup = new EzGroup("Optimization",EzpopulationSize, Ezimax, Ezdelta, EzDeltaE, temperatureGroup);
+		EzGroup optimizationGroup = new EzGroup("Optimization",EzpopulationSize, Ezimax, Ezdelta,EzConvDelay, EzConvSpread, temperatureGroup);
 
 		//Step size parameters
 		Ezs0 = new EzVarFloat("Initial Step size", 100, 1, 256, 1);
@@ -146,7 +149,6 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 
 		super.addEzComponent(EzinputSeq);
 		super.addEzComponent(EznbOfColors);
-		super.addEzComponent(EzUniformization);
 		super.addEzComponent(optimizationGroup);
 		super.addEzComponent(stepSizeGroup);
 		super.addEzComponent(scielabGroup);

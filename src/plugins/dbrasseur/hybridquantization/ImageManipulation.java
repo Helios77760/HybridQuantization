@@ -476,7 +476,7 @@ public class ImageManipulation {
             DeltaEKernel.setArgs(cl_comparisonBuffer, cl_labBuffer, cl_errorBuffers[0]);
             Opp2LABKernel.setArgs(cl_convBuffer, illuminant[0], illuminant[1], illuminant[2], cl_labBuffer);
             convolutionScielabTemp.setArgs(cl_OppBuffer,cl_filterBuffer,cl_filterBuffer2, cl_filterBuffer3,filterHalfWidth,w,h, cl_temp1Buffer,  cl_temp2Buffer, cl_temp3Buffer);
-            convolutionScielabEnd.setArgs(cl_temp1Buffer, cl_temp2Buffer, cl_temp3Buffer,cl_filterBuffer,cl_filterBuffer2, cl_filterBuffer3,filterHalfWidth,h,w, cl_convBuffer);
+            convolutionScielabEnd.setArgs(cl_temp1Buffer, cl_temp2Buffer, cl_temp3Buffer,cl_filterBuffer,cl_filterBuffer2, cl_absfilterBuffer,filterHalfWidth,h,w, cl_convBuffer);
 
             CLEvent.waitFor(loadcomp, loadrgb, loadfilter1, loadfilter2, loadfilter3, loadabs);
 
@@ -522,7 +522,7 @@ public class ImageManipulation {
                 {
                     break;
                 }
-                if(populationSize >= 20 || ite % 20/populationSize == 0)
+                if(ite % 10 == 0)
                 {
                     long elapsed = System.currentTimeMillis();
                     long restant=(long)((((elapsed-start)*1.0)/ite)*(maxiter-ite));
