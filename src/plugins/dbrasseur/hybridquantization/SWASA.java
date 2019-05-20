@@ -53,7 +53,7 @@ public class SWASA {
 
     public boolean isAccepted(double deltaE)
     {
-        return deltaE <= 0 || acceptanceProbability(deltaE*256) > icy.util.Random.nextDouble();
+        return deltaE <= 0 || acceptanceProbability(deltaE) > icy.util.Random.nextDouble();
     }
 
     public boolean keepsHisValues(int iteration)

@@ -154,9 +154,6 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		super.addEzComponent(scielabGroup);
 
 		scielabGroup.setFoldedState(true);
-
-		//Unsupported parameters
-		EzUniformization.setEnabled(false);
 	}
 
 	public static long addPerfLabel(long start, String message)

@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 /**
@@ -528,6 +529,12 @@ public class ImageManipulation {
                     long restant=(long)((((elapsed-start)*1.0)/ite)*(maxiter-ite));
                     String tpsRestant = (restant/60000 > 0 ? restant/60000 + "m" : "") + ((restant%60000)/1000 + "s") + " restant";
                     simulatedAnnealing.getPlugin().updateProgressBar(ite+"/"+maxiter + " : " + tpsRestant,(ite*1.0)/maxiter);
+                    for(double c : currentErrors)
+                    {
+                        System.out.printf("%.5f",c);
+                        System.out.print('\t');
+                    }
+                    System.out.println();
                 }
             }
 
