@@ -46,9 +46,14 @@ public class ImageManipulation {
 
     private boolean openCLAvailable;
 
-    public ImageManipulation(deltaETypes deltaEType){
+    private boolean verbose;
+    private boolean convergence;
+
+    public ImageManipulation(deltaETypes deltaEType, boolean verbose, boolean convergence){
         // Preparing the OpenCL system
         openCLAvailable=false;
+        this.verbose = verbose;
+        this.convergence = convergence;
         try{
             context = JavaCL.createBestContext();
             queue = context.createDefaultQueue();
@@ -385,7 +390,7 @@ public class ImageManipulation {
         float[][] currentColors;
 
         float[] bestColors = new float[nbOfColors*4];
-        double bestError;
+        double bestError = 0;
         int h = (inlinergbOriginal.length/4)/w;
         //float[] errorArray = new float[inlinergbOriginal.length/4];
         //int[] usedColors = new int[nbOfColors];
@@ -491,6 +496,10 @@ public class ImageManipulation {
             int maxiter = simulatedAnnealing.getImax();
             for(int ite=1; ite<=maxiter;ite++)
             {
+                if(simulatedAnnealing.getPlugin().isStopFlag())
+                {
+                    break;
+                }
                 //usedColorBuffer.rewind();
                 //usedColorBuffer.put(initialUsedColors);
                 //usedColorBuffer.rewind();
@@ -508,7 +517,7 @@ public class ImageManipulation {
                 int minerroridx=0;
                 for(int i=0; i<populationSize; i++)
                 {
-                    if(errors[i] < minerror)
+                    if(populationSize > 1 && errors[i] < minerror)
                     {
                         minerror = errors[i];
                         minerroridx = i;
@@ -521,11 +530,12 @@ public class ImageManipulation {
                         {
                             bestError = currentErrors[i];
                             System.arraycopy(currentColors[i], 0, bestColors,0, currentColors[i].length);
-                            System.out.println("Best Error :" + bestError);
+                            if(verbose)
+                                System.out.println("Best Error :" + bestError);
                         }
                     }
                 }
-                for(int i=0; i<populationSize; i++)
+                for(int i=0; convergence && populationSize > 1 && i<populationSize; i++)
                 {
                     if(!simulatedAnnealing.keepsHisValues(ite))
                     {
@@ -533,23 +543,27 @@ public class ImageManipulation {
                         System.arraycopy(currentColors[minerroridx], 0, colors[i],0, currentColors[minerroridx].length);
                     }
                 }
-
-                if(simulatedAnnealing.getPlugin().isStopFlag())
-                {
-                    break;
-                }
                 if(ite % 10 == 0)
                 {
                     long elapsed = System.currentTimeMillis();
                     long restant=(long)((((elapsed-start)*1.0)/ite)*(maxiter-ite));
                     String tpsRestant = (restant/60000 > 0 ? restant/60000 + "m" : "") + ((restant%60000)/1000 + "s") + " restant";
                     simulatedAnnealing.getPlugin().updateProgressBar(ite+"/"+maxiter + " : " + tpsRestant,(ite*1.0)/maxiter);
-                    for(double c : currentErrors)
+                    if(verbose && populationSize > 1)
                     {
-                        System.out.printf("%.5f",c);
-                        System.out.print('\t');
+                        double sumError=errors[0];
+                        for(int i=1; i < populationSize; i++)
+                        {
+                            sumError+=errors[i];
+                        }
+                        double variance=errors[0]*errors[0], mean = sumError/populationSize;
+                        for(int i=1; i < populationSize; i++)
+                        {
+                            variance+=errors[i]*errors[i];
+                        }
+                        System.out.printf("Population :  Mean : %.4f  Best : %.4f  Std. Dev. : %.4f\n", mean, minerror, Math.sqrt(variance/populationSize-mean*mean));
                     }
-                    System.out.println();
+
                 }
             }
 
@@ -572,6 +586,7 @@ public class ImageManipulation {
             for(CLIntBuffer b : cl_usedColorBuffers)
                 b.release();
         }
+        System.out.printf("Final error : %.5f\n", bestError);
         return bestColors;
     }
 
@@ -599,7 +614,7 @@ public class ImageManipulation {
         usedColors.rewind();
         usedColors.get(usedColorsArray);
 
-        return averageArray(errorArray)/3 + swasa.computePenalty(usedColorsArray);
+        return averageArray(errorArray) + swasa.computePenalty(usedColorsArray);
     }
 
     private double[] computeQuantizationErrorPopulation(int populationSize, int[] cleanUsedColors, CLFloatBuffer cl_colors, float[][] colors, CLIntBuffer[] usedColorBuffer, IntBuffer[] usedColors,int[][] usedColorsArray, CLFloatBuffer[] errorBuffer, FloatBuffer[] errors, float[][] errorArray, int[] worksize, SWASA swasa, CLEvent[][] events) {
@@ -694,7 +709,7 @@ public class ImageManipulation {
                 errors[finalI].rewind();
                 errors[finalI].get(errorArray[finalI]).rewind();
 
-                results[finalI] = averageArray(errorArray[finalI])/3 + swasa.computePenalty(usedColorsArray[finalI]);
+                results[finalI] = averageArray(errorArray[finalI]) + swasa.computePenalty(usedColorsArray[finalI]);
             });
             threads[i].start();
         }
@@ -838,5 +853,43 @@ public class ImageManipulation {
             }
         }
         return min;
+    }
+
+    public double computeError(float[] original, float[] quantized, float[] errorImage)
+    {
+        int[] workSize = {original.length / 4};
+        float[] errorArray = new float[original.length/4];
+        CLEvent event;
+
+        CLFloatBuffer cl_origBuffer = context.createFloatBuffer(CLMem.Usage.Input,original.length);
+        CLFloatBuffer cl_quantBuffer = context.createFloatBuffer(CLMem.Usage.Input,quantized.length);
+        FloatBuffer errorBuffer = ByteBuffer.allocateDirect(original.length*4).order(context.getByteOrder()).asFloatBuffer();
+        CLFloatBuffer cl_errorBuffer = context.createFloatBuffer(CLMem.Usage.Output, errorBuffer, false);
+
+        //Input buffers
+        event = loadGPUBuffer(cl_origBuffer,original);
+        event = loadGPUBuffer(cl_quantBuffer, quantized, event);
+
+        DeltaEKernel.setArgs(cl_origBuffer, cl_quantBuffer, cl_errorBuffer);
+
+        //Calcul de l'erreur
+        event = DeltaEKernel.enqueueNDRange(queue, workSize, event);
+        queue.finish();
+        cl_errorBuffer.read(queue,errorBuffer, true, event);
+        errorBuffer.rewind();
+        errorBuffer.get(errorArray);
+
+        cl_origBuffer.release();
+        cl_quantBuffer.release();
+        cl_errorBuffer.release();
+
+        double error=0.0;
+        for(int i=0; i<errorArray.length; i++)
+        {
+            int off = i<<2;
+            errorImage[off]=errorImage[off+1]=errorImage[off+2]=((255-(errorArray[i]))*(255-(errorArray[i])))/(255*255);
+            error+=errorArray[i];
+        }
+        return error/errorArray.length;
     }
 }

@@ -1,14 +1,12 @@
 package plugins.dbrasseur.hybridquantization;
 
+import icy.gui.dialog.MessageDialog;
 import icy.image.IcyBufferedImage;
 import icy.image.IcyBufferedImageUtil;
 import icy.sequence.Sequence;
 import icy.type.DataType;
 import icy.type.collection.array.Array1DUtil;
-import icy.util.Random;
 import plugins.adufour.ezplug.*;
-
-import java.util.Arrays;
 
 /**
  * Implementation of "HYBRID COLOR QUANTIZATION ALGORITHM INCORPORATING A HUMAN VISUAL PERCEPTION MODEL" by Schaefer and Nolle
@@ -21,14 +19,17 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
     public static long      perfTime;
 
 	private EzVarSequence	EzinputSeq;				//Image Sequence
+	private EzVarBoolean	EzQuantization;			//Do we have to compute ?
+	private EzVarSequence	EzQuantized;			//Quantized Image Sequence
 	private EzVarInteger	EznbOfColors;			//Number of colors to be used
-	private EzVarBoolean    EzUniformization;       //Uniform fake palette from the individual palettes
+    private EzVarBoolean    EzShowError;            //Do we display the error image ?
 	
 	//General optimization parameters
 	private EzVarInteger	EzpopulationSize;		//Population size (not supported yet)
 	private EzVarInteger	Ezimax;					//Max number of iterations
 	private EzVarFloat		Ezdelta;				//Penalty constant
-	private EzVarEnum		EzDeltaE;				//DeltaE Type
+
+	private EzVarBoolean	EzConvEnable;			//ConvergenceEnabling
 	private EzVarFloat		EzConvDelay;			//Convergence delay
 	private EzVarFloat		EzConvSpread;			//Convergence spread
 
@@ -46,6 +47,8 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 	private EzVarFloat      EzViewingDistance;      //Viewing distance in cm
 	private EzVarEnum       EzWhitePoint;           //Whitepoint
 
+    private EzVarBoolean    EzVerbose;              //Verbosity
+
     private boolean         stopFlag=false;
 	
 	
@@ -57,14 +60,41 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 	@Override
 	protected void execute() {
         stopFlag=false;
-		quantization(false, EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzConvDelay.getValue(), EzConvSpread.getValue(),ImageManipulation.deltaETypes.CIE76, EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
+        if(EzQuantization.getValue())
+		{
+		    if(EzinputSeq.getValue() == null || EzinputSeq.getValue().getFirstImage() == null)
+            {
+                MessageDialog.showDialog("Please open an image first.", MessageDialog.ERROR_MESSAGE);
+            }else if(EzinputSeq.getValue().getFirstImage().getSizeC() <3) {
+                MessageDialog.showDialog("Please open an image with 3 or more channels", MessageDialog.ERROR_MESSAGE);
+            }
+            else{
+                quantization(EzConvEnable.getValue(), EzVerbose.getValue(), EzQuantization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzConvDelay.getValue(), EzConvSpread.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
+            }
+
+		}else {
+            if (EzinputSeq.getValue() == null || EzinputSeq.getValue().getFirstImage() == null) {
+                MessageDialog.showDialog("Please open/select the original image first.", MessageDialog.ERROR_MESSAGE);
+            } else if (EzQuantized.getValue() == null || EzQuantized.getValue().getFirstImage() == null){
+                MessageDialog.showDialog("Please open/select the quantized image first.", MessageDialog.ERROR_MESSAGE);
+            }else if(!sameDimension(EzinputSeq.getValue().getFirstImage(), EzQuantized.getValue().getFirstImage())){
+                MessageDialog.showDialog("Mismatching image sizes or not enough channels, abort.", MessageDialog.ERROR_MESSAGE);
+            }else {
+                errorImage(EzVerbose.getValue(), EzinputSeq.getValue(), EzQuantized.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
+            }
+		}
 	}
 
-	private void quantization(Boolean uniform, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta,Float convDelay, Float convSpread, ImageManipulation.deltaETypes deltaEType, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
+	private boolean sameDimension(IcyBufferedImage i, IcyBufferedImage j)
+    {
+        return (i.getSizeX()==j.getSizeX()) && (i.getSizeY()==j.getSizeY()) && (i.getSizeC()>=3) && (j.getSizeC()>=3);
+    }
+
+	private void quantization(Boolean convergence, Boolean verbose, Boolean displayErrorImage, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta, Float convDelay, Float convSpread, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
 	    long start = System.currentTimeMillis();
 	    setStageName("Initialisation...");
 	    IcyBufferedImage im = IcyBufferedImageUtil.convertToType(seq.getFirstImage(), DataType.FLOAT,true);
-	    ImageManipulation imageProcessor= new ImageManipulation(deltaEType);
+	    ImageManipulation imageProcessor= new ImageManipulation(ImageManipulation.deltaETypes.CIE76, verbose, convergence);
 	    SWASA swasa = new SWASA(population, imax, iTc, delta, convDelay,convSpread,T0, alpha, s0, beta, this);
 		float[] inlineRGBImage = makeinline(im.getDataXYCAsFloat());
 		perfTime = System.currentTimeMillis();
@@ -90,10 +120,16 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		imageOut.setDataXY(1, Array1DUtil.floatArrayToArray(outImg[1], imageOut.getDataXY(1)));
 		imageOut.setDataXY(2, Array1DUtil.floatArrayToArray(outImg[2], imageOut.getDataXY(2)));
 		imageOut.endUpdate();
-		imageOut = IcyBufferedImageUtil.convertToType(imageOut, DataType.UBYTE, true);
+        IcyBufferedImage endImage = IcyBufferedImageUtil.convertToType(imageOut, DataType.UBYTE, true);
 
-		seqOut.addImage(imageOut);
+		seqOut.addImage(endImage);
 		seqOut.setName("Resultat("+(System.currentTimeMillis()-start)+"ms)");
+
+		if(displayErrorImage)
+        {
+            errorImageInternal(im,scImg, scielabProcessor.sRGBToScielab(imageOut.getDataXYCAsFloat(), imageOut.getSizeX()), imageProcessor);
+        }
+
 
 		// Affichage
 		addSequence(seqOut);
@@ -101,6 +137,50 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		scielabProcessor.close();
 	}
 
+	private void errorImage(Boolean verbose, Sequence original, Sequence quantized,Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint)
+	{
+	    perfTime = System.currentTimeMillis();
+		IcyBufferedImage orig = IcyBufferedImageUtil.convertToType(original.getFirstImage(), DataType.FLOAT,true);
+		IcyBufferedImage quant = IcyBufferedImageUtil.convertToType(quantized.getFirstImage(), DataType.FLOAT,true);
+		setStageName("Initialisation de SCIELab...");
+		ImageManipulation imageProcessor= new ImageManipulation(ImageManipulation.deltaETypes.CIE76, verbose, false);
+		ScielabProcessor scielabProcessor = new ScielabProcessor(dpi, viewingDistance, whitepoint, this, imageProcessor);
+		setStageName("SCIELab de l'image originale...");
+		float[] scImg = scielabProcessor.sRGBToScielab(orig.getDataXYCAsFloat(), orig.getSizeX());
+		perfTime = addPerfLabel(perfTime, "S-CIELab on the original image");
+		setStageName("SCIELab de l'image quantifiée...");
+		float[] qImg = scielabProcessor.sRGBToScielab(quant.getDataXYCAsFloat(), quant.getSizeX());
+		perfTime = addPerfLabel(perfTime, "S-CIELab on the quantized image");
+		errorImageInternal(orig, scImg, qImg, imageProcessor);
+		scielabProcessor.close();
+	}
+
+	private void errorImageInternal(IcyBufferedImage orig, float[] scImg, float[] qImg, ImageManipulation imageProcessor)
+    {
+        float[] errorImage = new float[scImg.length];
+        double error = imageProcessor.computeError(scImg, qImg, errorImage);
+        perfTime = addPerfLabel(perfTime, "Calcul de l'erreur");
+        System.out.println("DeltaE : " + error);
+        float[][] outImg = makeChannels(errorImage);
+
+        Sequence seqOut = new Sequence();
+
+        IcyBufferedImage imageOut =new IcyBufferedImage(orig.getSizeX(), orig.getSizeY(), orig.getSizeC(), orig.getDataType_());
+        imageOut.beginUpdate();
+        // Copie du tableau vers la sequence
+        imageOut.setDataXY(0, Array1DUtil.floatArrayToArray(outImg[0], imageOut.getDataXY(0)));
+        imageOut.setDataXY(1, Array1DUtil.floatArrayToArray(outImg[1], imageOut.getDataXY(1)));
+        imageOut.setDataXY(2, Array1DUtil.floatArrayToArray(outImg[2], imageOut.getDataXY(2)));
+        imageOut.endUpdate();
+        imageOut = IcyBufferedImageUtil.convertToType(imageOut, DataType.UBYTE, true);
+
+        seqOut.addImage(imageOut);
+        seqOut.setName("DeltaE : "+ error);
+
+        // Affichage
+        addSequence(seqOut);
+        perfTime = addPerfLabel(perfTime, "Affichage");
+    }
 
 	@Override
 	protected void initialize() {
@@ -108,8 +188,11 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		super.setTimeDisplay(true);
 		EzinputSeq = new EzVarSequence("Input");
 		EzinputSeq.setToolTipText("Images to be processed");
+		EzQuantization = new EzVarBoolean("Compute best quantized image ?", true);
+		EzQuantized = new EzVarSequence("Quantized image");
 		EznbOfColors = new EzVarInteger("Number of colors",8,1,16777216,1);
 		EznbOfColors.setToolTipText("Target number of colors in the palette | Default : 8 | Range : [1, 2^24]");
+		EzShowError = new EzVarBoolean("Show error image ?", false);
 
 		//General optimization parameters
 		EzpopulationSize = new EzVarInteger("Population size", 4,1,Integer.MAX_VALUE,1);
@@ -119,6 +202,8 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		Ezdelta = new EzVarFloat("Penalty Constant", 2, 0, Float.MAX_VALUE, 1);
 		Ezdelta.setToolTipText("Penalty constant for unused palette colors. | Default : 2");
 
+		EzConvEnable = new EzVarBoolean("Pop Convergence", true);
+		EzConvEnable.setToolTipText("Enables convergence of the population | Default : True");
 		EzConvDelay = new EzVarFloat("Convergence delay", 0.75f, 0.0f, 1.0f, 0.05f);
 		EzConvDelay.setToolTipText("Convergence delay of the population | Default : 0.75 | Range [0,1]");
 		EzConvSpread = new EzVarFloat("Convergence spread", 0.15f, 0.0f, 1.0f, 0.05f);
@@ -131,8 +216,9 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		EziTc.setToolTipText("Number of iterations where the temperature is kept constant (iterations per step). Default : 20");
 		Ezalpha = new EzVarFloat("Cooling coefficient", 0.9f, 0.0f ,1.0f,0.1f);
 		Ezalpha.setToolTipText("Cooling coefficient by which the temperature is changed per step. | Default : 0.9 | Range : [0,1]");
+        EzGroup convGroup = new EzGroup("Convergence", EzConvDelay, EzConvSpread);
 		EzGroup temperatureGroup = new EzGroup("Temperature",EzT0, EziTc, Ezalpha);
-		EzGroup optimizationGroup = new EzGroup("Optimization",EzpopulationSize, Ezimax, Ezdelta,EzConvDelay, EzConvSpread, temperatureGroup);
+		EzGroup optimizationGroup = new EzGroup("Optimization",EzpopulationSize, Ezimax, Ezdelta,EzConvEnable,convGroup, temperatureGroup);
 
 		//Step size parameters
 		Ezs0 = new EzVarFloat("Initial Step size", 100, 1, 256, 1);
@@ -149,13 +235,26 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		EzWhitePoint.setToolTipText("White point of the image | Default : D65");
 		EzGroup scielabGroup = new EzGroup("S-CIELAB", EzscielabWarning, Ezdpi, EzViewingDistance, EzWhitePoint);
 
+		EzVerbose = new EzVarBoolean("Verbosity", false);
+
 		super.addEzComponent(EzinputSeq);
+		super.addEzComponent(EzQuantization);
+		super.addEzComponent(EzQuantized);
 		super.addEzComponent(EznbOfColors);
+		super.addEzComponent(EzShowError);
 		super.addEzComponent(optimizationGroup);
 		super.addEzComponent(stepSizeGroup);
 		super.addEzComponent(scielabGroup);
+		super.addEzComponent(EzVerbose);
 
 		scielabGroup.setFoldedState(true);
+		EzQuantization.addVisibilityTriggerTo(EznbOfColors, true);
+		EzQuantization.addVisibilityTriggerTo(optimizationGroup, true);
+		EzQuantization.addVisibilityTriggerTo(stepSizeGroup, true);
+		EzQuantization.addVisibilityTriggerTo(EzQuantized, false);
+        EzQuantization.addVisibilityTriggerTo(EzShowError, true);
+        EzQuantization.addVisibilityTriggerTo(EzVerbose, true);
+        EzConvEnable.addVisibilityTriggerTo(convGroup, true);
 	}
 
 	public static long addPerfLabel(long start, String message)
