@@ -90,6 +90,7 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		imageOut.setDataXY(1, Array1DUtil.floatArrayToArray(outImg[1], imageOut.getDataXY(1)));
 		imageOut.setDataXY(2, Array1DUtil.floatArrayToArray(outImg[2], imageOut.getDataXY(2)));
 		imageOut.endUpdate();
+		imageOut = IcyBufferedImageUtil.convertToType(imageOut, DataType.UBYTE, true);
 
 		seqOut.addImage(imageOut);
 		seqOut.setName("Resultat("+(System.currentTimeMillis()-start)+"ms)");
@@ -117,6 +118,7 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		Ezimax.setToolTipText("Maximum number of iterations. Will linearly increase computation time| Default : 5000");
 		Ezdelta = new EzVarFloat("Penalty Constant", 2, 0, Float.MAX_VALUE, 1);
 		Ezdelta.setToolTipText("Penalty constant for unused palette colors. | Default : 2");
+
 		EzConvDelay = new EzVarFloat("Convergence delay", 0.75f, 0.0f, 1.0f, 0.05f);
 		EzConvDelay.setToolTipText("Convergence delay of the population | Default : 0.75 | Range [0,1]");
 		EzConvSpread = new EzVarFloat("Convergence spread", 0.15f, 0.0f, 1.0f, 0.05f);

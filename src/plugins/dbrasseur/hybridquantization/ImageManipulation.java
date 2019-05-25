@@ -504,8 +504,15 @@ public class ImageManipulation {
                 //loadGPUBuffer(cl_colorBuffer, currentColors, event).waitFor();
                 //error = computeQuantizationError(cl_filterBuffer, cl_filterBuffer2, cl_filterBuffer3, cl_absfilterBuffer, cl_OppBuffer, cl_temp1Buffer,cl_temp2Buffer,cl_temp3Buffer, cl_convBuffer, cl_usedColorBuffer, usedColorBuffer,usedColors, cl_errorBuffer, errorBuffer, errorArray, w, h, workSize, filterHalfWidth, simulatedAnnealing);
                 double[] errors = computeQuantizationErrorPopulation(populationSize, initialUsedColors, cl_colorBuffer,currentColors, cl_usedColorBuffers, usedColorBuffers,usedColorsArray,cl_errorBuffers,errorBuffers,errorArray,workSize, simulatedAnnealing, events );
+                double minerror=Double.MAX_VALUE;
+                int minerroridx=0;
                 for(int i=0; i<populationSize; i++)
                 {
+                    if(errors[i] < minerror)
+                    {
+                        minerror = errors[i];
+                        minerroridx = i;
+                    }
                     if(simulatedAnnealing.isAccepted(errors[i]-currentErrors[i]))
                     {
                         currentErrors[i] = errors[i];
@@ -516,6 +523,14 @@ public class ImageManipulation {
                             System.arraycopy(currentColors[i], 0, bestColors,0, currentColors[i].length);
                             System.out.println("Best Error :" + bestError);
                         }
+                    }
+                }
+                for(int i=0; i<populationSize; i++)
+                {
+                    if(!simulatedAnnealing.keepsHisValues(ite))
+                    {
+                        currentErrors[i] = minerror;
+                        System.arraycopy(currentColors[minerroridx], 0, colors[i],0, currentColors[minerroridx].length);
                     }
                 }
 
