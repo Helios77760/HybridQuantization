@@ -69,7 +69,7 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
                 MessageDialog.showDialog("Please open an image with 3 or more channels", MessageDialog.ERROR_MESSAGE);
             }
             else{
-                quantization(EzConvEnable.getValue(), EzVerbose.getValue(), EzQuantization.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzConvDelay.getValue(), EzConvSpread.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
+                quantization(EzConvEnable.getValue(), EzVerbose.getValue(), EzShowError.getValue(), EzinputSeq.getValue(), EznbOfColors.getValue(), EzpopulationSize.getValue(), Ezimax.getValue(), Ezdelta.getValue(), EzConvDelay.getValue(), EzConvSpread.getValue(), EzT0.getValue(), EziTc.getValue(), Ezalpha.getValue(), Ezs0.getValue(), Ezbeta.getValue(), Ezdpi.getValue(), EzViewingDistance.getValue(), (ScielabProcessor.Whitepoint) EzWhitePoint.getValue());
             }
 
 		}else {
@@ -91,7 +91,6 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
     }
 
 	private void quantization(Boolean convergence, Boolean verbose, Boolean displayErrorImage, Sequence seq, Integer nbOfColors, Integer population, Integer imax, Float delta, Float convDelay, Float convSpread, Float T0, Integer iTc, Float alpha, Float s0, Float beta, Integer dpi, Float viewingDistance, ScielabProcessor.Whitepoint whitepoint) {
-	    long start = System.currentTimeMillis();
 	    setStageName("Initialisation...");
 	    IcyBufferedImage im = IcyBufferedImageUtil.convertToType(seq.getFirstImage(), DataType.FLOAT,true);
 	    ImageManipulation imageProcessor= new ImageManipulation(ImageManipulation.deltaETypes.CIE76, verbose, convergence);
@@ -123,11 +122,11 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
         IcyBufferedImage endImage = IcyBufferedImageUtil.convertToType(imageOut, DataType.UBYTE, true);
 
 		seqOut.addImage(endImage);
-		seqOut.setName("Resultat("+(System.currentTimeMillis()-start)+"ms)");
+		seqOut.setName(seq.getName()+"_"+nbOfColors);
 
 		if(displayErrorImage)
         {
-            errorImageInternal(im,scImg, scielabProcessor.sRGBToScielab(imageOut.getDataXYCAsFloat(), imageOut.getSizeX()), imageProcessor);
+            errorImageInternal(seq.getName()+"_Nolle_",im,scImg, scielabProcessor.sRGBToScielab(imageOut.getDataXYCAsFloat(), imageOut.getSizeX()), imageProcessor);
         }
 
 
@@ -151,11 +150,11 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
 		setStageName("SCIELab de l'image quantifiée...");
 		float[] qImg = scielabProcessor.sRGBToScielab(quant.getDataXYCAsFloat(), quant.getSizeX());
 		perfTime = addPerfLabel(perfTime, "S-CIELab on the quantized image");
-		errorImageInternal(orig, scImg, qImg, imageProcessor);
+		errorImageInternal(original.getName(), orig, scImg, qImg, imageProcessor);
 		scielabProcessor.close();
 	}
 
-	private void errorImageInternal(IcyBufferedImage orig, float[] scImg, float[] qImg, ImageManipulation imageProcessor)
+	private void errorImageInternal(String name, IcyBufferedImage orig, float[] scImg, float[] qImg, ImageManipulation imageProcessor)
     {
         float[] errorImage = new float[scImg.length];
         double error = imageProcessor.computeError(scImg, qImg, errorImage);
@@ -175,7 +174,7 @@ public class HybridQuantization extends EzPlug implements EzStoppable{
         imageOut = IcyBufferedImageUtil.convertToType(imageOut, DataType.UBYTE, true);
 
         seqOut.addImage(imageOut);
-        seqOut.setName("DeltaE : "+ error);
+        seqOut.setName(name+ String.format("_DE_%.3f", error));
 
         // Affichage
         addSequence(seqOut);
